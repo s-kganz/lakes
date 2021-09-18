@@ -1,18 +1,36 @@
 ---
-title: "R Notebook"
-output: html_notebook
+title: "Modeling lake depth from NLA 2012 polygons"
+author:
+- Keenan Ganz
+date: 
+output:
+  bookdown::word_document2:
+    number_sections: yes
+    reference_docx: style-ref.docx
+bibliography: bibliography.bib
+csl: american-institute-of-physics.csl
 ---
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+# Introduction
+Lake depth and volume are useful parameters which inform large-scale studies on the role of inland freshwater in the Earth's climate system. However, bathymetric surveys of lakes are scarce due to inaccessibility, cost, or both. With scant resources, land managers may focus on large waterbodies that have an immediate impact on water supply or recreation. This prioritization is at odds with the fact that despite making up only 8% of the world's freshwater, lakes <500km$^2$ in surface area make up a majority of the interface between aquatic and terrestrial environments[@messagerEstimatingVolumeAge2016]. For a robust understanding of the role lakes play in Earth's climate, more information on their depth and volume is necessary.
 
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+Models of lake volume generally explain more of the variance than models of maximum lake depth. In a study on Swedish lakes, 89% of the variance in lake volume could be explained by lake area, while only 43% of the variance in lake depth could be explained by a model comprised of several variables derived from local topography[@sobekPredictingDepthVolume2011]. Other authors had similar results, with lake volume more easily predicted than lake depth, for a dataset of lakes in Quebec, Canada[@heathcotePredictingBathymetricFeatures2015].
 
-```{r}
-plot(cars)
+Existing models also assume that topographic features in a buffer around a lake are indicative of bathymetry. The size of the buffer in this approach is an important factor, with smaller buffers generally producing more effective models. In the aforementioned models, the best predictors were calculated in a 25m buffer or in the smallest dynamic buffer calculated from lake area[@sobekPredictingDepthVolume2011; @heathcotePredictingBathymetricFeatures2015]. In a more direct approach, maximum depth was calculated from the median slope of the catchment multiplied by the furthest distance from shore. Although this approach generally overestimated field validation data, it explained a relatively large proportion of the variance in lake depth (maximum $R^2=0.67$)[@hollisterPredictingMaximumLake2011a].
+
+Authors have also considered the regional context of a lake, assuming some degree of spatial autocorrelation. Although a lake's region did not improve model performance in one study[@sobekPredictingDepthVolume2011], the hydrologic unit a lake was located in did improve predictive power in another[@oliverPredictionLakeDepth2016]. The modeling approach, region of study, and main results are summarized in Table 1.
+
+```{r past-model-summary}
+tibble(
+  "Citation"=c("Oliver et al. (2016)", "Hollister et al. (2011)", "Heathcote et al. (2015)", "Sobek (2011)"),
+  "Region"=c("Northeastern United States", "Northeastern United States", "Southern Quebec, Canada", "Sweden"),
+  "Model"=c("Mixed effects (regional and observational)", "$Z_{max} \\approx D_{max}\\cdot S_{median}$", "Log-transformed linear regression", "Log-transformed linear regression"),
+  "Maximum Depth $R^2$"=c(0.53, 0.67, 0.52, 0.43)
+) %>%
+  knitr::kable(caption="Summary of existing models of maximum lake depth, using local topography and regional characteristics. $Z_{max}$: maximum lake depth; $D_{max}$: maximum distance from shore in lake; $S_{median}$: median slope in lake catchment.")
 ```
 
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+Comparison between previous models of lake depth is difficult due to differing lake datasets that considered a narrow set of lake contexts. The goal of this study is to evaluate existing modeling approaches on the US Environmental Protection Agency's 2012 National Lake Assessment. This dataset consists of 1,029 lakes over the conterminous United States, in a variety of topographic and geologic settings. This study will also evaluate nonparametric modeling approaches, such as random forest, as alternatives to linear models used in previous studies.
 
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+# References
 
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
