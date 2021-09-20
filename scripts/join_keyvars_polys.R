@@ -119,5 +119,6 @@ lakes_join <- lakes_join %>% mutate(
   dev_index = perimeter_km / (2*sqrt(pi * area_sqkm))
 )
 
-# save the data
-st_write(lakes_join, dsn="data_working/nla_2012_lakepolys_join.shp")
+# save the data as a regular CSV since we threw out the geometry already
+lakes_join %>%
+  write_csv("data_out/nla2012_lakes_join.csv")
