@@ -20,6 +20,20 @@ Existing models also assume that topographic features in a buffer around a lake 
 
 Authors have also considered the regional context of a lake, assuming some degree of spatial autocorrelation. Although a lake's region did not improve model performance in one study[@sobekPredictingDepthVolume2011], the hydrologic unit a lake was located in did improve predictive power in another[@oliverPredictionLakeDepth2016]. The modeling approach, region of study, and main results are summarized in Table 1.
 
+```{r setup, include=FALSE}
+library(sf)
+library(tidyverse)
+library(caret)
+library(randomForest)
+
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
 ```{r past-model-summary}
 tibble(
   "Citation"=c("Oliver et al. (2016)", "Hollister et al. (2011)", "Heathcote et al. (2015)", "Sobek (2011)"),
@@ -30,7 +44,74 @@ tibble(
   knitr::kable(caption="Summary of existing models of maximum lake depth, using local topography and regional characteristics. $Z_{max}$: maximum lake depth; $D_{max}$: maximum distance from shore in lake; $S_{median}$: median slope in lake catchment.")
 ```
 
-Comparison between previous models of lake depth is difficult due to differing lake datasets that considered a narrow set of lake contexts. The goal of this study is to evaluate existing modeling approaches on the US Environmental Protection Agency's 2012 National Lake Assessment. This dataset consists of 1,029 lakes over the conterminous United States, in a variety of topographic and geologic settings. This study will also evaluate nonparametric modeling approaches, such as random forest, as alternatives to linear models used in previous studies.
+Comparison between previous models of lake depth is difficult due to differing lake datasets that considered a narrow set of lake contexts. The goal of this study is to evaluate existing modeling approaches on the US Environmental Protection Agency (EPA) 2012 National Lake Assessment. This dataset consists of 1,029 lakes over the conterminous United States, in a variety of topographic and geologic settings. This study will also evaluate nonparametric modeling approaches, such as random forest, as alternatives to linear models used in previous studies.
+
+# Methods
+## GIS Workflow
+Lake polygons were downloaded from the US EPA website as a shapefile with field measurements in the attribute table. Lake depth is taken as the index site depth. The field operations manual for the assessment claims that index site depth was limited to 50m[@usepa2012NationalLakes]. However, depths greater than 50m are present in lake polygon dataset.
+
+Topographic features were calculated from the Shuttle Radar Topography Mission, which encodes elevation at 30m resolution[@farrShuttleRadarTopography2007]. Buffer zones 100m in width were constructed around each lake polygon in QGIS and processed on Google Earth Engine[@gorelickGoogleEarthEngine2017a]. Although these are somewhat wider buffers than in the models cited above, they ensure a sufficient sample size of elevation pixels. Minimum elevation, maximum elevation, and median slope were calculated within each buffer zone.
+
+A similar approach was used to summarize surficial geology within 1km of each lake using a classification dataset over the entire United States at 90m resolution[@theobaldEcologicallyRelevantMapsLandforms2015]. The areal cover of 18 lithology classes was calculated within the buffer and then normalized for each lake. Codes were assigned to each lithology class and are given in Table 2.
+
+## Topographic Lake Concept
+We begin with the equation used in Hollister et al. to estimate maximum depth from local topography (Eq. 1)
+$$
+\hat{Z}_{max} = D_{max} \times S_{median}
+$$
+where $\hat{Z}_{max}$ is maximum lake depth, $D_{max}$ is maximum distance to the shoreline, and $S_{median}$ is the median slope within a dynamic buffer zone around the lake. We found $D_{max}$ impractical to calculate for complex lake polygons, so we made two modifications to this dataset. First, we used a static 100m buffer region around each lake as described above. Second, instead of $D_{max}$, we used a characteristic dimension calculated from the oriented bounding box for each lake (Eq. 2)
+$$
+D = 1/2 \times L_{box} \times \frac{A_{lake}}{A_{box}}
+$$
+where $L_{box}$ is the smaller dimension of the bounding box, $A_{lake}$ is lake area, and $A_{box}$ is oriented bounding box area. The oriented bounding box is similar to a minimum bounding rectangle, but may be rotated to accomodate less area.
+
+```{r orient-bbox-img, fig.cap="An example of an oriented bounding box for Big Stone Lake, MN, USA. Yellow: lake polygon. Red: minimum oriented bounding box."}
+
+knitr::include_graphics(normalizePath("notebooks/img/orient_bbox_ex.JPG"))
+```
+
+```{r lithology-classes}
+lithology <- tibble(
+  Code=c("WAT", "CAR", "NCB", "AKI", "SIR", "EXV", "COS", "GTC", "GTL", "GTC", "GLS", "GOC", "HYD", "ESC", "ESF", "SLS", "ACS", "CSC"),
+  Description=c("Water", "Carbonate", "Non-carbonate", "Alkaline intrusive", "Silicic residual", "Extrusive volcanic", "Colluvial sediment", "Glacial till clay", "Glacial till loam", "Glacial till coarse", "Glacial lake sediment fine", "Glacial outwash coarse", "Hydric", "Eolian sediment coarse", "Eolian sediment fine", "Saline lake sediment", "Alluvium and coastal sediment fine", "Coastal sediment coarse")
+)
+
+lithology %>% knitr::kable(caption="Lithology classes and their 3-letter reference codes used in the text.")
+```
+
+In all models, we spilt the NLA data into training (80%) and validation (20%) sets to calculate model performance statistics.
+
+```{r read-data}
+lakes <- read_csv("data_out/nla2012_lakes_join.csv")
+trainIdx <- createDataPartition(lakes$index_depth_m, p=0.8, list=F, times=1)
+trainLakes <- lakes[ trainIdx, ]
+validLakes <- lakes[-trainIdx, ]
+```
+
+# Results
+We begin by repeating the modeling approaches summarized above before moving to our approach.
+
+## Log-transformed Linear Regression
+```{r area-linreg}
+depth_area_lm <- lm(index_depth_m ~ log(area_sqkm), data=trainLakes)
+validLakes$index_depth_m_pred <- predict(depth_area_lm, validLakes)
+depth_area_lm_rmse <- ((validLakes$index_depth_m - validLakes$index_depth_m_pred) ^ 2) %>%
+  mean() %>%
+  sqrt()
+```
+```{r area-linreg-plot, fig.cap="Scatterplot of true lake depth and predicted lake depth for the validation lakes taken from the 2012 NLA dataset. Solid line indicates 1:1 correspondence."}
+ggplot(validLakes, aes(index_depth_m, index_depth_m_pred)) + geom_point() + 
+  geom_abline(slope=1, intercept=0) +
+  labs(x="True Lake Depth (m)", y="Predicted Lake Depth (m)")
+```
+
+Simple linear regression did not perform as well on the NLA dataset as reported in previous work. The overall $R^2$ was `r round(summary(depth_area_lm)$adj.r.squared, 2)` and RMSE `r round(depth_area_lm_rmse, 2)`m on the validation dataset. Shallow lake depth was generally overestimated, while deep lake depth was generally underestimated (Fig. 1). This result may owe itself to the fact that even though lake area and lake depth are positively correlated, shallow lakes exist at all magnitudes of surface area (Fig. 2).
+
+```{r area-depth-plot, fig.cap="Scatterplot of lake area and lake depth for all lakes in the 2012 NLA dataset."}
+ggplot(lakes, aes(x=area_sqkm, y=index_depth_m)) + geom_point() + 
+  labs(x="Lake Area (sq. km.)", y="Lake Depth (m)") + scale_x_log10()
+```
+
+Next, we considered the hypothesis that the topography surrounding a lake is indicative of lake bathymetry.
 
 # References
-
