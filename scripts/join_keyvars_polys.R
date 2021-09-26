@@ -114,5 +114,11 @@ nla_join <- lakepolys %>%
   mutate(bbox_mindim = min(bbox_width, bbox_height),
          bbox_chardim = 0.5 * bbox_mindim * (lakearea_m2 / bbox_area))
 
-nla_join %>%
+# determine which polygons are duplicated, drop the duplicates from 2007
+nla07_dupes <- st_read("data_working/nla07_duplicates.shp")
+
+nla_join_nodupes <- nla_join %>%
+  filter(!(NLAID %in% nla07_dupes$SITEID))
+
+nla_join_nodupes %>%
   st_write("data_out/nla_gee.geojson", delete_dsn=T)
