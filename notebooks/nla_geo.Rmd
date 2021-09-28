@@ -1,0 +1,228 @@
+---
+title: "Geologic Context of NLA Lakes"
+author:
+- Keenan Ganz
+date: 
+output: html_document
+bibliography: bibliography.bib
+csl: american-institute-of-physics.csl
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+cat(getwd())
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+
+
+library(sf)
+library(tidyverse)
+library(caret)
+library(randomForest)
+library(factoextra)
+library(FactoMineR)
+library(cooccur)
+library(visNetwork)
+```
+
+# Introduction
+
+Lake morphology, including depth and volume, is possibly influenced by the surficial geology of the surrounding area. Distinct lakes from the 2007 and 2012 EPA National Lakes Assessment were identified and 1km buffer zones around each lake were produced. The relative areal cover of 20 categories of parent soil material was calculated in each buffer region[@theobaldEcologicallyRelevantMapsLandforms2015].
+
+The resulting dataset is high-dimensional. Principal Component Analysis (PCA) decomposes high-dimensional datasets into a low-dimensional dataset or orthogonal factors. Clustered observations in principal component space may be indicative of the geologic contexts in which lakes form.
+
+The categories of parent soil material are described in Table 1.
+
+```{r geo-table}
+lithology <- tibble(
+  Number=c(0, 1, 3, 4, 5, 7, 8, 9, 10, 11, 13:20),
+  Code=c("WAT", "CAR", "NCB", "AKI", "SIR", "EXV", "COS", "GTC", "GTL", "GTC", "GLS", "GOC", "HYD", "ESC", "ESF", "SLS", "ACS", "CSC"),
+  Description=c("Water", "Carbonate", "Non-carbonate", "Alkaline intrusive", "Silicic residual", "Extrusive volcanic", "Colluvial sediment", "Glacial till clay", "Glacial till loam", "Glacial till coarse", "Glacial lake sediment fine", "Glacial outwash coarse", "Hydric", "Eolian sediment coarse", "Eolian sediment fine", "Saline lake sediment", "Alluvium and coastal sediment fine", "Coastal sediment coarse")
+)
+
+lithology %>% knitr::kable(caption="Lithology classes and their 3-letter reference codes used in the text.")
+```
+
+First, let's consider the number of times each sediment type is observed.
+
+```{r read-data}
+nla <- st_read("data_out/nla_gee.geojson") %>%
+  select(contains("geo"), maxdepth, -geometry) %>%
+  rename(geo_water = geo_type0,
+         geo_carbonate=geo_type1,
+         geo_non_carbonate=geo_type3,
+         geo_alkaline_intrusive=geo_type4,
+         geo_silicic_residual=geo_type5,
+         geo_extrusive_volcanic=geo_type7,
+         geo_colluvial_sed=geo_type8,
+         geo_glacial_clay=geo_type9,
+         geo_glacial_loam=geo_type10,
+         geo_glacial_coarse=geo_type11,
+         geo_glacial_lake_fine=geo_type13,
+         geo_glacial_outwash_coarse=geo_type14,
+         geo_hydric=geo_type15,
+         geo_eolian_coarse=geo_type16,
+         geo_eolian_find=geo_type17,
+         geo_saline_lake_sed=geo_type18,
+         geo_alluvium_coastal_fine=geo_type19,
+         geo_coastal_coarse=geo_type20)
+```
+```{r sediment-barplot}
+nla %>%
+  tibble() %>%
+  select(-maxdepth, -geometry) %>%
+  drop_na() %>%
+  summarize(across(everything(), ~sum(. > 0))) %>%
+  pivot_longer(cols=everything()) %>%
+  ggplot(aes(x=reorder(name, -value), y=value)) + geom_bar(stat="identity") +
+  coord_flip() +
+  labs(x="", y="Number of Observations")
+```
+
+## Dimensionality Reduction
+
+We begin with a scree plot for a PCA.
+
+```{r geo-pca-scree}
+nla_pca <- nla %>%
+  tibble() %>%
+  select(-maxdepth, -geometry) %>%
+  drop_na() %>%
+  PCA(graph=F)
+
+fviz_screeplot(nla_pca)
+```
+
+The elbow in the scree plot occurs at two principal components, so only these will be retained. Only a small proportion of the variance can be explained by this decomposition.
+
+```{r geo-pca-biplot}
+fviz_pca_var(nla_pca)
+```
+
+Few geology types load onto the components since a low proportion of variance is explained. Only the glacial variables show large loadings while the other variables cluster near the origin.
+
+The majority of observations are "all or nothing". That is, the geologic context of a lake is usually only one sediment type. Consider the number of sediment types present at each lake.
+
+```{r prop-mixed-obs}
+nla %>%
+  tibble() %>%
+  rowwise() %>%
+  mutate(n_seds = sum(c_across(geo_water:geo_glacial_clay) > 0)) %>%
+  ggplot(aes(x=n_seds)) + geom_bar(stat="count") +
+  labs(y="Count", x="Number of Sediment Types")
+```
+
+Dimensionality reduction will not work well on this data because the matrix is sparse. A better analysis technique may be co-occurrence analysis.
+
+## Co-occurrence Analysis
+
+A probabilistic co-occurrence model was applied to a presence-absence matrix of sediment types[@veechProbabilisticModelAnalysing2013]. Sediment interactions are categorized as either negatively co-occurring, positively co-occurring, or random (i.e. insignificant relationship). The interaction matrix is below.
+
+```{r cooccurrence-matrix}
+nla_cooccur <- nla %>%
+  tibble() %>%
+  drop_na() %>%
+  select(contains("geo"), -geometry) %>%
+  mutate_all(ceiling) %>%
+  as.matrix() %>%
+  t()
+
+nla_model <- cooccur(nla_cooccur, type="spp_site", spp_names=T)
+plot(nla_model)
+```
+
+Most of the interactions are either negative or insignificant. Co-occurring sediment groups include certain glacial sediments as well as water and coastal sediments. These groups may be better visualized in a network.
+
+In the below figure, solid lines indicate positive co-occurrences while dashed lines indicate negative co-occurrences.
+
+```{r sediment-network}
+# adapted from https://medium.com/analytics-vidhya/
+# how-to-create-co-occurrence-networks-with-the-r-
+# packages-cooccur-and-visnetwork-f6e1ceb1c523
+nodes <- data.frame(
+  id=1:nrow(nla_cooccur),
+  label=rownames(nla_cooccur),
+  color = "#606482"
+)
+
+edges <- data.frame(from = nla_model$results$sp1, to = nla_model$results$sp2,
+      color = ifelse(nla_model$results$p_lt <= 0.05, "#B0B2C1", "#3C3F51"),
+      p_gt = nla_model$results$p_gt
+) %>%
+  filter(p_gt < 0.05)
+
+visNetwork(nodes, edges)
+```
+
+Water is the most well-connected sediment type. This is unsurprising, since all of these data come from lakes. Where one lake is, other water bodies are also probably nearby. The rarest sediment types are isolated nodes. Finally, the glacial nodes have organized themselves according to grain size, with the exception of the coarsest grains.
+
+## Random Forest Model
+
+We have identified which sediments tend to appear in the same lake buffer. But, does this tell us anything about the lake morphology? With many variables that likely have a nonlinear relationship with depth, random forest is an appropriate modeling approach.
+
+```{r rf-train}
+nla_rf_df <- nla %>%
+  tibble() %>%
+  select(-geometry) %>%
+  drop_na()
+
+trainInd <- createDataPartition(nla_rf_df$maxdepth)[[1]]
+rf_train <- nla_rf_df[ trainInd, ]
+rf_valid <- nla_rf_df[-trainInd, ]
+
+trControl <- trainControl(
+  method="repeatedcv",
+  number=3,
+  repeats=3
+)
+
+# random search of model parameters
+rf_model <- train(
+  maxdepth ~ .,
+  data=rf_train,
+  method="rf",
+  metric="RMSE",
+  tuneLength=5,
+  trControl=trControl
+)
+
+rf_valid$predicted <- predict(rf_model, rf_valid)
+valid_rmse <- sqrt(mean((rf_valid$predicted - rf_valid$maxdepth) ^ 2))
+ggplot(rf_valid, aes(x=maxdepth, y=predicted)) + geom_point()
+```
+
+Does the RMSE improve if we use the categorical form of the data?
+
+```{r rf-train-categorical}
+nla_rf_df2 <- nla %>%
+  tibble() %>%
+  drop_na() %>%
+  select(-geometry) %>%
+  mutate(across(.cols=geo_water:geo_glacial_clay, ceiling))
+
+rf_train2 <- nla_rf_df2[ trainInd, ]
+rf_valid2 <- nla_rf_df2[-trainInd, ]
+
+rf_model2 <- train(
+  maxdepth ~ .,
+  data=rf_train2,
+  method="rf",
+  metric="RMSE",
+  tuneLength=5,
+  trControl=trControl
+)
+
+rf_valid2$predicted <- predict(rf_model2, rf_valid2)
+valid_rmse2 <- sqrt(mean((rf_valid2$predicted - rf_valid2$maxdepth) ^ 2))
+ggplot(rf_valid2, aes(x=maxdepth, y=predicted)) + geom_point()
+```
+
+The results are comparable between the categorical and continuous models, which had maximum depth RMSE of `r round(valid_rmse2, 2)`m and `r round(valid_rmse, 2)`m respectively.
+
+# Conclusions
+Although some cooccurrence relationships were observed between sediment types, sediments are not a particularly useful predictor of maximum lake depth. By comparison with other studies, the predictive power of surrounding sediment is slightly less than that of median buffer slope and lake area [@sobekPredictingDepthVolume2011]
+
+# References

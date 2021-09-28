@@ -72,6 +72,7 @@ knitr::include_graphics(normalizePath("notebooks/img/orient_bbox_ex.JPG"))
 
 ```{r lithology-classes}
 lithology <- tibble(
+  Number=1:20,
   Code=c("WAT", "CAR", "NCB", "AKI", "SIR", "EXV", "COS", "GTC", "GTL", "GTC", "GLS", "GOC", "HYD", "ESC", "ESF", "SLS", "ACS", "CSC"),
   Description=c("Water", "Carbonate", "Non-carbonate", "Alkaline intrusive", "Silicic residual", "Extrusive volcanic", "Colluvial sediment", "Glacial till clay", "Glacial till loam", "Glacial till coarse", "Glacial lake sediment fine", "Glacial outwash coarse", "Hydric", "Eolian sediment coarse", "Eolian sediment fine", "Saline lake sediment", "Alluvium and coastal sediment fine", "Coastal sediment coarse")
 )
