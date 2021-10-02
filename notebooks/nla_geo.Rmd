@@ -3,21 +3,20 @@ title: "Geologic Context of NLA Lakes"
 author:
 - Keenan Ganz
 date: 
-output: html_document
+output: pdf_document
 bibliography: bibliography.bib
 csl: american-institute-of-physics.csl
 ---
 
 ```{r setup}
 knitr::opts_knit$set(root.dir = normalizePath(".."))
-cat(getwd())
 knitr::opts_chunk$set(
 	echo = FALSE,
 	message = FALSE,
 	warning = FALSE
 )
-
-
+```
+```{r libraries}
 library(sf)
 library(tidyverse)
 library(caret)
@@ -30,9 +29,9 @@ library(visNetwork)
 
 # Introduction
 
-Lake morphology, including depth and volume, is possibly influenced by the surficial geology of the surrounding area. Distinct lakes from the 2007 and 2012 EPA National Lakes Assessment were identified and 1km buffer zones around each lake were produced. The relative areal cover of 20 categories of parent soil material was calculated in each buffer region[@theobaldEcologicallyRelevantMapsLandforms2015].
+Lake morphology, including depth and volume, is possibly influenced by the surficial geology of the surrounding area. Distinct lakes from the 2007 and 2012 EPA National Lakes Assessment were identified and 1km buffer zones around each lake were produced. The relative areal cover of 18 categories of parent soil material was calculated in each buffer region[@theobaldEcologicallyRelevantMapsLandforms2015]. The result is an 18-column table where each cell ranges from 0-1, the proportion of cover for the given lake buffer.
 
-The resulting dataset is high-dimensional. Principal Component Analysis (PCA) decomposes high-dimensional datasets into a low-dimensional dataset or orthogonal factors. Clustered observations in principal component space may be indicative of the geologic contexts in which lakes form.
+Dimensionality may be reduced by the use of Principal Component Analysis (PCA), which decomposes high-dimensional datasets into a low-dimensional dataset or orthogonal factors. Clustered observations in principal component space may be indicative of the geologic contexts in which lakes form.
 
 The categories of parent soil material are described in Table 1.
 
@@ -49,8 +48,8 @@ lithology %>% knitr::kable(caption="Lithology classes and their 3-letter referen
 First, let's consider the number of times each sediment type is observed.
 
 ```{r read-data}
-nla <- st_read("data_out/nla_gee.geojson") %>%
-  select(contains("geo"), maxdepth, -geometry) %>%
+nla <- read_csv("data_out/nla_gee.csv") %>%
+  select(contains("geo"), maxdepth) %>%
   rename(geo_water = geo_type0,
          geo_carbonate=geo_type1,
          geo_non_carbonate=geo_type3,
@@ -68,12 +67,13 @@ nla <- st_read("data_out/nla_gee.geojson") %>%
          geo_eolian_find=geo_type17,
          geo_saline_lake_sed=geo_type18,
          geo_alluvium_coastal_fine=geo_type19,
-         geo_coastal_coarse=geo_type20)
+         geo_coastal_coarse=geo_type20) %>%
+  mutate(across(everything(), as.numeric))
 ```
 ```{r sediment-barplot}
 nla %>%
   tibble() %>%
-  select(-maxdepth, -geometry) %>%
+  select(-maxdepth) %>%
   drop_na() %>%
   summarize(across(everything(), ~sum(. > 0))) %>%
   pivot_longer(cols=everything()) %>%
@@ -89,7 +89,7 @@ We begin with a scree plot for a PCA.
 ```{r geo-pca-scree}
 nla_pca <- nla %>%
   tibble() %>%
-  select(-maxdepth, -geometry) %>%
+  select(-maxdepth) %>%
   drop_na() %>%
   PCA(graph=F)
 
@@ -125,7 +125,7 @@ A probabilistic co-occurrence model was applied to a presence-absence matrix of 
 nla_cooccur <- nla %>%
   tibble() %>%
   drop_na() %>%
-  select(contains("geo"), -geometry) %>%
+  select(contains("geo")) %>%
   mutate_all(ceiling) %>%
   as.matrix() %>%
   t()
@@ -138,7 +138,7 @@ Most of the interactions are either negative or insignificant. Co-occurring sedi
 
 In the below figure, solid lines indicate positive co-occurrences while dashed lines indicate negative co-occurrences.
 
-```{r sediment-network}
+```{r sediment-network, fig.align="center", out.width="0.8\\linewidth"}
 # adapted from https://medium.com/analytics-vidhya/
 # how-to-create-co-occurrence-networks-with-the-r-
 # packages-cooccur-and-visnetwork-f6e1ceb1c523
@@ -154,7 +154,9 @@ edges <- data.frame(from = nla_model$results$sp1, to = nla_model$results$sp2,
 ) %>%
   filter(p_gt < 0.05)
 
-visNetwork(nodes, edges)
+# cannot export directly in a notebook
+#visNetwork(nodes, edges) %>% visExport()
+knitr::include_graphics(normalizePath("notebooks/img/geo_network.png", winslash="/"))
 ```
 
 Water is the most well-connected sediment type. This is unsurprising, since all of these data come from lakes. Where one lake is, other water bodies are also probably nearby. The rarest sediment types are isolated nodes. Finally, the glacial nodes have organized themselves according to grain size, with the exception of the coarsest grains.
@@ -166,7 +168,6 @@ We have identified which sediments tend to appear in the same lake buffer. But, 
 ```{r rf-train}
 nla_rf_df <- nla %>%
   tibble() %>%
-  select(-geometry) %>%
   drop_na()
 
 trainInd <- createDataPartition(nla_rf_df$maxdepth)[[1]]
@@ -200,7 +201,6 @@ Does the RMSE improve if we use the categorical form of the data?
 nla_rf_df2 <- nla %>%
   tibble() %>%
   drop_na() %>%
-  select(-geometry) %>%
   mutate(across(.cols=geo_water:geo_glacial_clay, ceiling))
 
 rf_train2 <- nla_rf_df2[ trainInd, ]
