@@ -95,18 +95,23 @@ lakegeo <- lakegeo %>%
          across(.cols=contains("geo_type"), ~ .x / row_sum)) %>%
   select(-row_sum, -histogram)
 
-lakepolys <- st_read("data_working/nla_combined.shp") %>%
-  select(-SITEID, -NLA12_ID)
+# spatial resources
+lakepolys <- st_read("data_working/nla_combined.shp")
 lakebbox  <- st_read("data_working/nla_combined_oriented_bbox.shp") %>%
   tibble() %>%
   select(-geometry, -SITEID, -NLA12_ID)
 names(lakebbox)[2:6] <- str_c("bbox_", names(lakebbox[2:6]))
+# Poles are placed with +/- 5m tolerance
+lakepoles <- st_read("data_working/nla_poles_inaccessibility.shp") %>%
+  tibble() %>%
+  dplyr::select(-geometry)
 
 nla_join <- lakepolys %>%
   inner_join(lakebbox, by="NLAID") %>%
   inner_join(lakegeo,  by="NLAID") %>%
   inner_join(gee_join, by="NLAID") %>%
   inner_join(nla_depth, by="NLAID") %>%
+  inner_join(lakepoles, by="NLAID") %>%
   mutate(lakearea_m2 = st_area(geometry),
          lakeperim_m = st_perimeter(geometry),
          dev_index = 0.5 * lakeperim_m  / sqrt(lakearea_m2 * pi)) %>%
@@ -114,11 +119,14 @@ nla_join <- lakepolys %>%
   mutate(bbox_mindim = min(bbox_width, bbox_height),
          bbox_chardim = 0.5 * bbox_mindim * (lakearea_m2 / bbox_area))
 
+
 # determine which polygons are duplicated, drop the duplicates from 2007
 nla07_dupes <- st_read("data_working/nla07_duplicates.shp")
 
 nla_join_nodupes <- nla_join %>%
-  filter(!(NLAID %in% nla07_dupes$SITEID))
+  filter(!(NLAID %in% nla07_dupes$SITEID)) %>%
+  tibble() %>%
+  dplyr::select(-geometry, -NLA12_ID, -SITEID)
 
 nla_join_nodupes %>%
-  st_write("data_out/nla_gee.geojson", delete_dsn=T)
+  write_csv("data_out/nla_gee.csv")
