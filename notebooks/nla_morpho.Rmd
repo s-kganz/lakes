@@ -1,0 +1,245 @@
+---
+title: "Direct Morphological Modeling of NLA Lakes"
+author:
+- Keenan Ganz
+date: 
+output: pdf_document
+bibliography: bibliography.bib
+csl: american-institute-of-physics.csl
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+```{r libraries}
+library(sf)
+library(tidyverse)
+library(caret)
+library(ggridges)
+library(latex2exp)
+library(mgcv)
+```
+
+# Introduction
+Data on lake bathymetry is notoriously scarce, necessitating a modeling approach to determining lake depth as opposed to direct observation. Processes that shape topography also shape lake basins[@hutchinsonTreatiseLimnologyGeography1957]. Therefore, lake basin morphology can be estimated from the morphology of the surrounding terrain. To predict maximum lake depth, one approach is to extend topographic information below the water line.
+
+Previous work extended the median slope in a buffer region around the lake linearly[@hollisterPredictingMaximumLake2011a]. This linear approach also assumed that the point furthest from the lake shoreline is the location of maximum depth. This model was found to overestimate maximum lake depth. There are two possible sources of error. First, maximum lake depth may not be at the point furthest from shore. Second, the bathymetric profile from shore to point of maximum depth may not be linear.
+
+This notebook focuses on the second source of error through two questions. First, is the bathymetric profile from surrounding topography to location of maximum depth linear? Second, does the slope of this profile within the lake match that of the surrounding landscape? Results will inform a modeling approach that reduces overestimation of maximum lake depth.
+
+# Methods
+## Data Sources
+Two datasets of maximum lake depth were used. First, bathymetric contours at a 5-foot interval for 1990 lakes in the midwestern United States were acquired from the Minnesota Natural Resources Department. Since the contour interval was 5 feet, we took maximum lake depth as a range from the reported maximum depth to the next deepest depth class. Second, lake polygons were combined from the US Environmental Protection Agency National Lakes Assessment (NLA) in 2007 and 2012. Maximum lake depth was determined by a field campaign and attached as a shapefile attribute [@usepa2012NationalLakes]. Duplicate lakes between the 2007 and 2012 surveys were discarded, keeping only the observations from 2012.
+
+## Terrain Analysis
+Given the large spatial extent of the data sources, we determined median slope in a 1km buffer region surrounding lakes with a digital elevation model generated at 90m cell size by the Shuttle Radar Topography Mission[@jarvisHolefilledSRTMGlobe2008]. All analysis was performed with Google Earth Engine[@gorelickGoogleEarthEngine2017a].
+
+## Bathymetric Profile Estimation
+The bathymetric profile of lakes can be estimated using maximum depth and the distance from shore to the location of maximum depth. After Hollister et al., we assumed that maximum depth occurred at the location furthest from the lake shoreline[@hollisterPredictingMaximumLake2011a]. We term the location furthest from shore as the lake pole of inaccessbility. Poles locations were calculated using the "Pole of Relative Inaccessibility" tool in QGIS, which uses a modified version of an algorithm designed for spherical polygons[@garcia-castellanosPolesInaccessibilityCalculation2007; qgisdevelopmentteamQGISGeographicInformation2020].
+
+If a lake's bathymetric profile is linear, maximum depth is calculated as
+$\hat{Z} = S \times D_{max}$ where $\hat{Z}$ is estimated maximum lake depth, $S$ is median slope in the buffer region, and $D_{max}$ is the maximum distance from shoreline. Rearranging yields an equation for estimating slope given lake depth and distance from shoreline.
+
+\begin{align}
+\hat{S} = \frac{Z}{D_{max}}
+\end{align}
+
+To test if bathymetric profiles are linear, we compared $\hat{S}$ with the median slope of the buffer region around lakes. As an alternative hypothesis, we considered an asymptotic profile.
+
+\begin{align}
+\hat{Z} = Z_{max} \times \frac{D_{max}}{S^{-1} + D_{max}}.
+\end{align}
+
+This equation asymptotically approaches $Z_{limit}$, an upper limit on maximum lake depth. At the shoreline, the profile 
+
+# Results
+## Bathymetric Slope vs. Terrain Slope
+```{r read-data}
+mn_contours <- st_read("data_in/mn_lake_bathymetry/lake_bathymetric_contours.shp")
+
+mn_poles    <- st_read("data_working/mn_poles_inaccessbility.shp") %>%
+  tibble() %>%
+  select(DOWLKNUM, LAKE_NAME, dist_pole) %>%
+  # some duplicate lakes take the furthest point
+  group_by(DOWLKNUM, LAKE_NAME) %>%
+  summarize(dist_pole = max(dist_pole))
+
+mn_slope    <- read_csv("data_in/gee/mn_slope.csv") %>%
+  # discard extra cols
+  select(DOWLKNUM, LAKE_NAME, max:p90) %>%
+  # convert from degrees to slope ratio
+  mutate(across(max:p90, ~tan(. * pi / 180))) %>%
+  # rename all the things to slope
+  rename_with(~str_c("slope_", .), max:p90)
+
+nla <- read_csv("data_out/nla_gee.csv") %>%
+  # convert all the slopes out of degrees
+  mutate(across(contains("slope"), ~tan(.x * pi / 180)))
+```
+```{r calc-mn-slopes}
+mn_zmax <- mn_contours %>%
+  tibble() %>%
+  select(-geometry) %>%
+  group_by(DOWLKNUM, LAKE_NAME) %>%
+  summarize(maxdepth_lower = max(abs_depth)) %>%
+  mutate(maxdepth_upper = maxdepth_lower+5) %>%
+  inner_join(mn_poles, by=c("DOWLKNUM", "LAKE_NAME")) %>%
+  mutate(slope_lower_est = maxdepth_lower / dist_pole,
+         slope_upper_est = maxdepth_upper / dist_pole) %>%
+  inner_join(mn_slope, by=c("DOWLKNUM", "LAKE_NAME"))
+```
+
+```{r mn-slope-tests}
+# is the median slope of surrounding terrain similar to the bathymetric slope?
+# check assumptions of t-test - both are hella non-normal
+#shapiro.test(mn_zmax$slope_lower_est)
+#shapiro.test(mn_zmax$slope_p50)
+mn_zmax %>%
+  ungroup() %>%
+  select(slope_lower_est, slope_p50) %>%
+  pivot_longer(everything()) %>%
+  mutate(name=recode(name,
+                     slope_p50="Median Terrain Slope",
+                     slope_lower_est="Lower Estimate\nBathymetric Slope")) %>%
+  ggplot(aes(x=value, y=name)) + geom_density_ridges() +
+  xlim(0, 0.5) +
+  labs(y="", x="Slope (rise / run)") +
+  ggtitle("Minnesota Dataset")
+```
+
+```{r nla-slope-tests}
+# essentially repeat the above cell but with the NLA data
+nla_bathy <- nla %>%
+  mutate(bathy_slope = maxdepth / dist_pole)
+
+nla_bathy %>%
+  select(bathy_slope, slope200_p50) %>%
+  pivot_longer(everything()) %>%
+  mutate(name=recode(name, 
+         "slope200_p50"="Median Terrain Slope", 
+         "bathy_slope"="Bathymetric Slope")) %>%
+  ggplot(aes(x=value, y=name)) + geom_density_ridges() +
+  labs(x="Slope (rise / run)", y="") +
+  ggtitle("NLA 2007 & 2012")
+```
+
+Lakes in Minnesota had higher bathymetric slope than the surrounding terrain, while the NLA lakes had lower bathymetric slope than the surrounding terrain. Minnesota lakes form in a glacial context while NLA lakes form in a variety of contexts. We can use the geologic attributes of the NLA dataset to determine if glacial context interacts with the difference between terrain slope and bathymetric slope.
+
+```{r attach-glacial-attr}
+# glacial types include 9, 10, 11, 13, 14
+glacial_cols <- c("geo_type9" , "geo_type10", "geo_type11", 
+                  "geo_type13", "geo_type14")
+nla_bathy %>%
+  mutate(is_glacial = (geo_type9+geo_type10+geo_type11+geo_type13+geo_type14) > 0.5) %>%
+  drop_na() %>%
+  select(bathy_slope, slope200_p50, is_glacial) %>%
+  pivot_longer(c(bathy_slope, slope200_p50)) %>%
+  mutate(name=recode(name, 
+         "slope200_p50"="Median Terrain Slope", 
+         "bathy_slope"="Bathymetric Slope")) %>%
+  ggplot(aes(x=value, y=name)) + 
+  geom_density_ridges(aes(fill=is_glacial), alpha=0.5) +
+  labs(x="Slope (rise / run)", y="") +
+  ggtitle("NLA 2007 & 2012") +
+  facet_wrap(~ is_glacial)
+```
+
+About half of lakes are glacial, but visually there is no difference in the slope density plot along this category.
+
+## Linear Depth Modeling
+We now apply the linear modeling technique described in Hollister et al. and implemented in the `lakemorpho` R package[hollisterPredictingMaximumLake2011a; @hollisterLakemorphoCalculatingLake2017]. We apply equation 1 to estimate maximum lake depth.
+```{r linear-est}
+nla_linpred <- nla %>%
+  mutate(
+    zhat = slope50_p25 * dist_pole
+  ) %>%
+  drop_na()
+
+nla_linpred_r2   <- cor(nla_linpred$maxdepth, nla_linpred$zhat) ^ 2
+nla_linpred_rmse <- mean(sqrt((nla_linpred$maxdepth - nla_linpred$zhat) ^ 2))
+
+nla_linpred_lm <- lm(maxdepth ~ zhat, data=nla_linpred)
+
+ggplot(nla_linpred, aes(x=maxdepth, y=zhat)) +
+  geom_abline(slope=1, intercept=0, color="red", size=2, linetype="dashed") + 
+  geom_point() +
+  coord_equal() + ylim(0, 60) +
+  labs(y=TeX("\\hat{Z} (m)"), x=TeX("Z_{max} (m)"))
+```
+
+Maximum depth estimated by linear extension of buffer slope is generally an overestimate of maximum depth. The above model has an $R^2=$`r round(nla_linpred_r2, 2)` and maximum depth RMSE of `r round(nla_linpred_rmse, 2)` m. This is expected given that terrain slope is generally an overestimate of bathymetric slope.
+
+```{r asymp-est}
+zlimit <- max(nla$maxdepth, na.rm=T)
+
+nla_asymp <- nla %>%
+  mutate(
+    zhat = (dist_pole) / (1 + dist_pole)
+  ) %>%
+  drop_na()
+
+nla_asymp_lm <- lm(maxdepth ~ zhat, data=nla_asymp)
+nla_asymp$zcorrected <- predict(nla_asymp_lm, nla_asymp)
+
+ggplot(nla_asymp, aes(x=maxdepth, y=zcorrected)) +
+  geom_abline(slope=1, intercept=0, color="red", size=2, linetype="dashed") + 
+  geom_point() +
+  coord_equal() + ylim(0, 60)
+  labs(y=TeX("\\hat{Z} (m)"), x=TeX("Z_{max} (m)"))
+```
+
+The prediction from the asymptotic model is far worse. Prediction for low depths is decent, but deeper lakes reach the asymptotic maximum. A more appropriate relationship may be logarithmic.
+
+\begin{align}
+$\hat{Z} = \ln{(S \times D_{max})}$
+\end{align}
+
+```{r log-est}
+nla_log <- nla %>%
+  mutate(
+    zhat = log(slope50_p25 * dist_pole)
+  ) %>%
+  drop_na()
+
+nla_log_lm <- lm(maxdepth ~ zhat, data=nla_asymp)
+nla_log$zcorrected <- predict(nla_log_lm, nla_log)
+
+ggplot(nla_log, aes(x=maxdepth, y=zcorrected)) +
+  geom_abline(slope=1, intercept=0, color="red", size=2, linetype="dashed") + 
+  geom_point() +
+  coord_equal() + ylim(0, 60) +
+  labs(y=TeX("\\hat{Z} (m)"), x=TeX("Z_{max} (m)")) 
+```
+
+## Generalized Additive Modeling
+Generalized linear modeling allows for non-linear relationships between variables. We know that lake depth is related to surrounding terrain slope and distance to lake center, but the nature of the relationship is difficult to elucidate.
+
+```{r glm-est}
+nla_gam <- nla %>%
+  gam(maxdepth ~ s(slope50_p25) + s(dist_pole), method="REML", data=.)
+
+gam.check(nla_gam)
+```
+
+```{r plot-gam}
+plot(nla_gam)
+```
+
+```{r plot-gam2}
+nla %>%
+  mutate(zhat = predict(nla_gam, nla)) %>%
+  ggplot(aes(x=maxdepth, y=zhat)) +
+  geom_abline(slope=1, intercept=0, 
+              color="red", size=2, linetype="dashed") + 
+  geom_point() +
+  coord_equal() + ylim(0, 60) +
+  labs(y=TeX("\\hat{Z} (m)"), x=TeX("Z_{max} (m)")) 
+```
+
+# References
+

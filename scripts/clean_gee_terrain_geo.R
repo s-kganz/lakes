@@ -129,4 +129,4 @@ nla_join_nodupes <- nla_join %>%
   dplyr::select(-geometry, -NLA12_ID, -SITEID)
 
 nla_join_nodupes %>%
-  write_csv("data_out/nla_gee.csv")
+  write_csv("data_out/nla_terrain_gee.csv")
