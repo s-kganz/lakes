@@ -39,7 +39,7 @@ sgmc_primary   <- read_csv("data_in/gee/sgmc_primary.csv",
          across(.cols=contains("lith_type"), ~ .x / row_sum)) %>%
   select(-row_sum, -histogram, -`system:index`) %>%
   # drop the NA lith column
-  select(-lith_type3)
+  select(-lith_type4)
 
 sgmc_secondary <- read_csv("data_in/gee/sgmc_secondary.csv",
                            col_types=cols(NLA12_ID=col_character())) %>%
@@ -58,7 +58,7 @@ sgmc_secondary <- read_csv("data_in/gee/sgmc_secondary.csv",
          across(.cols=contains("lith_type"), ~ .x / row_sum)) %>%
   select(-row_sum, -histogram, -`system:index`) %>%
   # drop the NA lith column
-  select(-lith_type6)
+  select(-lith_type7)
 
 write_csv(sgmc_primary,   "data_working/sgmc_primary.csv")
 write_csv(sgmc_secondary, "data_working/sgmc_secondary.csv")
