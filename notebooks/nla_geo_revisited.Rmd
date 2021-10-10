@@ -2,13 +2,14 @@
 title: "Geologic Context of NLA Lakes, Revisited"
 author:
 - Keenan Ganz
-date: 
-output: pdf_document
+output:
+  pdf_document:
+    extra_dependencies: ["booktabs"]
 bibliography: bibliography.bib
 csl: american-institute-of-physics.csl
 ---
 
-```{r setup}
+```{r setup, echo=F, message=F}
 knitr::opts_knit$set(root.dir = normalizePath(".."))
 knitr::opts_chunk$set(
 	echo = FALSE,
@@ -17,6 +18,7 @@ knitr::opts_chunk$set(
 )
 ```
 ```{r libraries}
+library(igraph)
 library(sf)
 library(tidyverse)
 library(caret)
@@ -25,8 +27,123 @@ library(factoextra)
 library(FactoMineR)
 library(cooccur)
 library(visNetwork)
+library(ggridges)
 ```
 
 # Introduction
+In `01_nla_geo.pdf`, we looked at a dataset of surficial geology and determined whether the parent sediment types had any predictive power on lake depth. We found that the predictive power was overall quite low ($R^2 \approx 0.1$), but we did see interesting cooccurrence of sediments according to a physical process. For example, we saw that glacial sediments sorted themselves by grain size.
+
+The source dataset for that notebook was part of a larger publication on landforms for climate adaptation planning[@theobaldEcologicallyRelevantMapsLandforms2015]. That raster was in turn derived from surficial material mapping undertaken by the US Geologic Survey[@sollerMapDatabaseSurficial]. Although surficial materials are ecologically important, they may not have as large an impact on terrain morphology as underlying bedrock. This notebook will revisit the analysis from the first notebook with the State Geologic Map Compilation[@hortonStateGeologicMap2017].
+
+# Methods
+## SGMC Characteristics
+The SGMC is a compilation of state geologic maps. As such, the SGMC is not standardized across state boundaries. There are five nested levels of lithology categories. We only consider the primary and secondary categories, which are listed below.
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+Primary Category & Secondary Category\\
+\midrule
+Sedimentary & Carbonate\\
+ & Chemical\\
+ & Clastic\\
+ & Coal\\
+\addlinespace
+Igneous & Plutonic\\
+ & Volcanic\\
+ & Hypabyssal\\
+\addlinespace
+Metamorphic & Metaigneous\\
+ & Gneiss\\
+ & Granoblastic\\
+ & Schist\\
+ & Metasedimentary\\
+ & Amphibolite\\
+ & Migmatite\\
+ & Hydrothermally-altered\\
+ & Granulite\\
+\addlinespace
+Tectonite & Melange\\
+ & Mylonite\\
+\addlinespace
+Unconsolidated & Fine-detrital\\
+ & Coarse-detrital\\
+ & Peat\\
+ & Marl\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The SGMC is desirable because of its nested design. The schema is also designed from a geologic perspective.
+
+## Spatial Analysis
+As in the previous notebook, we begin with sampled lake polygons from the 2007 and 2012 EPA National Lakes Assessment[@usepa2012NationalLakes]. Duplicates across the two sampling campaigns were removed, and the polygon was buffered by 1km. Both of these datasets were uploaded to Google Earth Engine[@gorelickGoogleEarthEngine2017a]. SGMC polygons were rasterized to 50m cell size and the relative areal cover of each lithology category was computed.
+
+## Cooccurrence Analysis
+To determine if certain lithology categories are more likely to cooccur in the 1km buffer region around each lake, we used the species cooccurrence model implemented in the R package `cooccur`[@veechProbabilisticModelAnalysing2013].
+
+# Results
+```{r read-data}
+nla <- read_csv("data_out/nla_terrain_gee.csv") %>%
+  select(NLAID, maxdepth)
+
+sgmc_primary <- read_csv("data_working/sgmc_primary.csv")
+sgmc_secondary <- read_csv("data_working/sgmc_secondary.csv")
+
+# add prefixes
+primary_colnames <- colnames(sgmc_primary)[2:ncol(sgmc_primary)]
+primary_colnames <- paste("primary_", primary_colnames, sep="")
+colnames(sgmc_primary)[2:ncol(sgmc_primary)] <- primary_colnames
+
+secondary_colnames <- colnames(sgmc_secondary)[2:ncol(sgmc_secondary)]
+secondary_colnames <- paste("secondary_", secondary_colnames, sep="")
+colnames(sgmc_secondary)[2:ncol(sgmc_secondary)] <- secondary_colnames
+
+# join with NLA data
+nla_lith <- nla %>%
+  inner_join(sgmc_primary, by="NLAID") %>%
+  inner_join(sgmc_secondary, by="NLAID") %>%
+  # drop lakes that didn't intersect any of the polygons
+  rowwise() %>%
+  mutate(n_seds = sum(c_across(contains("primary")) > 0)) %>%
+  filter(n_seds > 0) %>%
+  select(-n_seds)
+```
+
+## Exploratory Data Analysis
+Although constructed in a different way, the SGMC data should hav esimilar characteristics as the previous surficial geology data. Like before, we expect that the majority of lakes are associated with one major geology type.
+```{r n-primary-types}
+nla_lith %>%
+  rowwise() %>%
+  mutate(n_seds = sum(c_across(contains("primary")) > 0)) %>%
+  ggplot(aes(x=n_seds)) + geom_bar(stat="count") +
+  labs(y="Count", x="Number of Primary Lithology Types")
+```
+
+```{r n-primary-types}
+nla_lith %>%
+  rowwise() %>%
+  mutate(n_seds = sum(c_across(contains("secondary")) > 0)) %>%
+  ggplot(aes(x=n_seds)) + geom_bar(stat="count") +
+  labs(y="Count", x="Number of Secondary Lithology Types")
+```
+
+As before, most lakes have 1-2 lithology types. Now, let's see if any category is associated with lake depth. For this, we assign lakes to lithology types by computing the category with the largest areal cover in each polygon.
+
+```{r primary-depth-barplot}
+primary_only <- nla_lith %>% select(contains("primary")) %>%
+  as.matrix()
+nla_lith$dominant_primary <- colnames(primary_only)[max.col(primary_only)]
+nla_lith$dominant_primary <- recode(nla_lith$dominant_primary,
+                                    "primary_lith_type1"="Igneous",
+                                    "primary_lith_type2"="Sedimentary",
+                                    "primary_lith_type3"="Unconsolidated",
+                                    "primary_lith_type5"="Metamorphic",
+                                    "primary_lith_type6"="Tectonite")
+nla_lith %>%
+  ggplot(aes(y=dominant_primary, x=maxdepth)) +
+  geom_density_ridges() +
+  labs(y="Primary Lithology", x="Maximum Depth")
+```
 
 # References
