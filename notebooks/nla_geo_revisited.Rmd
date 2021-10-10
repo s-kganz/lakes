@@ -1,0 +1,32 @@
+---
+title: "Geologic Context of NLA Lakes, Revisited"
+author:
+- Keenan Ganz
+date: 
+output: pdf_document
+bibliography: bibliography.bib
+csl: american-institute-of-physics.csl
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+```{r libraries}
+library(sf)
+library(tidyverse)
+library(caret)
+library(randomForest)
+library(factoextra)
+library(FactoMineR)
+library(cooccur)
+library(visNetwork)
+```
+
+# Introduction
+
+# References
