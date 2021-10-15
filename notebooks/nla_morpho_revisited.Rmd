@@ -1,0 +1,161 @@
+---
+title: "Direct Morphological Modeling of NLA Lakes, Revisited"
+author:
+- Keenan Ganz
+output:
+  pdf_document:
+    extra_dependencies: ["booktabs"]
+bibliography: bibliography.bib
+csl: american-institute-of-physics.csl
+---
+
+```{r setup, echo=F, message=F}
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+```{r libraries}
+library(igraph)
+library(sf)
+library(tidyverse)
+library(caret)
+library(randomForest)
+library(ggridges)
+library(latex2exp)
+```
+
+# Introduction
+In `02_nla_morpho`, we reproduced the lake depth modeling technique in Hollister et al[@hollisterPredictingMaximumLake2011a]. In short, this method linearly extends the surrounding terrain to estimate lake depth. Median slope in a buffer region is multiplied by the maximum distance from shoreline (Eq. 1)
+
+\begin{align}
+\hat{Z} = S \times D_{max}
+\end{align}
+
+The cited study considered a suite of NLA lakes in the western United States with a dynamic buffer region. When this model is applied to all unique NLA lakes from 2007 and 2012, we found that it generally overestimates lake depth. Another function, such as a quadratic curve, may be closer to reality. If we consider a profile from the shoreline to the point of maximum depth, the model result is as follows.
+
+```{r profile-plot}
+x <- 0:100
+y_linear <- 50 - 1/2 * x
+y_quad   <- 50 - 1/2 * x + 2.5e-3 * x^2
+
+data.frame(x=x, y_linear=y_linear, y_quad=y_quad) %>%
+  pivot_longer(contains("y")) %>%
+  mutate(name = recode(
+    name,
+    y_linear="Linear Model",
+    y_quad="Quadratic Model"
+  )) %>%
+  ggplot(aes(x=x, y=value)) +
+  geom_line(aes(color=name), size=2) +
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank()) +
+  labs(y="Elevation",
+       x="Distance from Shoreline",
+       color="")
+```
+
+The linear model is easily calculated from the median slope of the surrounding landscape. To calculate the quadratic model, we can consider the second-order Taylor approximation of a differentiable polynomial (Eq. 2).
+
+\begin{align}
+\hat{Z} = S_1 \times D_{max} + \frac{S_2}{2} \times D_{max}^2
+\end{align}
+
+Here, $S_1$ is the median terrain slope in the buffer region and $S_2$ is the median profile curvature in the buffer region. Profile curvature (also known as vertical curvature) is equivalent to the second derivative of elevation, calculated in the direction of maximum slope. A detailed discussion of morphology variables is provided in Florinsky[@florinskyDigitalTerrainAnalysis2012].
+
+If the quadratic model is more effective than the linear model, we would expect that for most lakes, $S_1 < 0$ and $S_2 > 0$. We will test these assumptions and then determine if a quadratic model is a more effective estimator of maximum lake depth.
+
+# Methods
+## Data Sources
+Polygons and maximum depth information from the EPA National Lakes Assessment (NLA) were downloaded from the US EPA website (https://www.epa.gov/national-aquatic-resource-surveys/data-national-aquatic-resource-surveys). Buffer strips 200m wide were computed in QGIS and uploaded to Google Earth Engine (GEE)[@gorelickGoogleEarthEngine2017a]. For elevation data, we used the elevation product from the Shuttle Radar Topography Mission at 30m cell size[@farrShuttleRadarTopography2007].
+
+## Spatial Analysis
+Some buffer strips were especially complex and had to be simplified for processing in GEE. The maximum error in simplification was 30m. In GEE, slope was calculated from a built-in function. To calculate vertical curvature, we used the Terrain Analysis in GEE (TAGEE) package[@safanelliTerrainAnalysisGoogle2020]. The raw SRTM data was smoothed with a Gaussian filter with radius equal to three pixels and $\sigma=2$ before processing by TAGEE. Within each buffer region, the minimum, maximum, median, and selected percentiles were calculated for vertical curvature values within the buffer. Statistics were downloaded as a CSV and analyzed further in R[@rcoreteamLanguageEnvironmentStatistical2021].
+
+# Results
+```{r load-data}
+nla <- read_csv("data_out/nla_terrain_gee.csv") %>%
+  select(NLAID, maxdepth, dist_pole, slope200_median) %>%
+  # convert slope from degrees to rise/run ratio
+  mutate(slope200_median = tan(slope200_median * pi / 180))
+  
+vcurv <- read_csv("data_in/gee/nla_vcurv_200m.csv") %>%
+  select(NLAID, min, max, median, contains("p")) %>%
+  inner_join(nla, by="NLAID")
+```
+## Exploratory Data Analysis
+We begin by determining if our assumption that the majority of lakes have positive curvature. 
+```{r vcurv_eda}
+vcurv_eda <- vcurv %>%
+  select(min, median, max, p70, p80, p90) %>%
+  pivot_longer(everything()) %>%
+  mutate(name=recode(
+    name,
+    min="Minimum",
+    max="Maximum",
+    median="Median",
+    p70 = "70th Percentile",
+    p80 = "80th Percentile",
+    p90 = "90th Percentile"
+  ))
+
+vcurv_eda %>%
+  ggplot(aes(x=value)) + geom_histogram() + 
+  geom_vline(xintercept=0, linetype="dashed", color="red") +
+  facet_wrap(~ name, nrow=2) + 
+  xlim(c(-3e-3, 3e-3)) + 
+  labs(y="Count", x=TeX("Vertical Curvature ($m^{-1}$)"))
+```
+
+```{r vcurv-eda-table}
+vcurv_eda %>%
+  group_by(name) %>%
+  drop_na() %>%
+  summarize_all(~ round(sum(.x > 0) / n() * 100, 2)) %>%
+  rename(
+    `Statistic`=name,
+    `Percent Greater than Zero`=value
+  ) %>%
+  knitr::kable()
+```
+
+The 50th percentile vertical curvature in the majority of buffer regions is negative, but the 70th percentile vertical curvature is positive. Given that we know the linear model overestimates lake depth, the quadratic model would be less accurate if we use median vertical curvature. Instead, we will use the 90th percentile.
+
+## Depth Modeling
+```{r calc-zhat}
+vcurv_pred <- vcurv %>%
+  # flip signs because we are measuring depth, not elevation
+  mutate(across(c(everything(), -NLAID, -maxdepth), ~ .x * -1)) %>%
+  mutate(
+    zhat_linear = dist_pole * slope200_median,
+    zhat_quad   = dist_pole * slope200_median + 0.5 * dist_pole^2 * p90) %>%
+  select(maxdepth, zhat_linear, zhat_quad) %>%
+  rename(`Quadratic Model`=zhat_quad,
+         `Linear Model`=zhat_linear) %>%
+  drop_na() %>%
+  # throw out garbage row
+  filter(`Quadratic Model` > 0)
+
+vcurv_pred %>%
+  pivot_longer(contains("Model")) %>%
+  ggplot(aes(x=maxdepth, y=value)) + geom_point() +
+  geom_abline(aes(slope=1, intercept=0), 
+              linetype="dashed", color="red", size=2) + 
+  facet_wrap(~ name) + coord_equal() +
+  ylim(0, 60) +
+  labs(y=TeX("$\\hat{Z}$ (m)"), x="True Depth (m)")
+```
+
+```{r rmse-r2-table}
+linear_r2 = cor(vcurv_pred$maxdepth, vcurv_pred$`Linear Model`)^2
+quad_r2 = cor(vcurv_pred$maxdepth, vcurv_pred$`Quadratic Model`)^2
+linear_rmse = sqrt(mean((vcurv_pred$maxdepth - vcurv_pred$`Linear Model`) ^ 2))
+quad_rmse = sqrt(mean((vcurv_pred$maxdepth - vcurv_pred$`Quadratic Model`) ^ 2))
+
+data.frame(Model=c("Linear", "Quadratic"),
+           R2=c(linear_r2, quad_r2),
+           RMSE=c(linear_rmse, quad_rmse)) %>%
+  knitr::kable(digits=2, col.names=c("Model", "$R^2$", "RMSE"))
+```
