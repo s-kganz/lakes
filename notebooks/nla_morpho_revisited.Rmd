@@ -25,6 +25,7 @@ library(caret)
 library(randomForest)
 library(ggridges)
 library(latex2exp)
+library(mgcv)
 ```
 
 # Introduction
@@ -159,3 +160,39 @@ data.frame(Model=c("Linear", "Quadratic"),
            RMSE=c(linear_rmse, quad_rmse)) %>%
   knitr::kable(digits=2, col.names=c("Model", "$R^2$", "RMSE"))
 ```
+
+We can also try a multiple linear modeling approach where the linear and quadratic terms are predictors.
+
+```{r quad-lin-mod}
+quad_lm <- vcurv %>%
+  mutate(dist_pole_squared = dist_pole^2) %>%
+  lm(maxdepth ~ dist_pole:slope200_median + dist_pole_squared:p90, data=.)
+summary(quad_lm)
+```
+
+Finally, we can use a general additive model (GAM) which uses the linear and quadratic terms as predictors. First, we use only the linear term.
+
+```{r linear-lin-mod}
+linear_lm <- vcurv %>%
+  lm(maxdepth ~ dist_pole:slope200_median, data=.)
+summary(linear_lm)
+```
+
+The deviance explained is similar to other linear models we have seen.
+
+```{r quad-gam}
+quad_gam <- vcurv %>%
+  mutate(linear_term = dist_pole * slope200_median,
+         quad_term = dist_pole^2 * p90) %>%
+  drop_na() %>%
+  gam(maxdepth ~ s(linear_term) + s(quad_term), data=.)
+
+summary(quad_gam)
+```
+
+When we add the quadratic term, the Deviance explained increases by about 50%.
+
+# Conclusions
+Including profile curvature as a quadratic term in the linear depth modeling equation improves model accuracy by preventing overestimation in the linear term. In order to directly compare the quadratic model to the linear model, we must completely reproduce the spatial workflow presented in Hollister et al. 
+
+# References
