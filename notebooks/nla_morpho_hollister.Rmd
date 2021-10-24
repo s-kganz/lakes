@@ -1,0 +1,120 @@
+---
+title: "Comparing Buffer Methods in Modeling Lake Depth"
+author:
+- Keenan Ganz
+output:
+  pdf_document:
+    extra_dependencies: ["booktabs"]
+bibliography: bibliography.bib
+csl: american-institute-of-physics.csl
+---
+
+```{r setup, echo=F, message=F}
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+```{r libraries}
+library(sf)
+library(tidyverse)
+library(caret)
+library(randomForest)
+library(ggridges)
+library(latex2exp)
+library(mgcv)
+```
+
+# Introduction
+In `04_nla_morpho_revisted`, we modifed the direct linear modeling approach used in Hollister et al.[@hollisterPredictingMaximumLake2011a] with a profile curvature term calculated on the surrounding elevation data. Although the depth models were equivalent to the original paper, the buffer region was calculated somewhat differently. While Hollister et al. used a dynamic buffer region dependent on maximum distance from shoreline, we simply buffered 200m. Now, we will compare this model when we exactly recreate the buffering process used in the paper. In particular, we have two questions:
+
+1. Does the buffering method used, either dynamic or constant-distance, affect how the surrounding terrain is characterized?
+2. Does the buffering method used affect lake depth modeling performance?
+
+# Methods
+## Buffer Calculation
+The buffering procedure used in Hollister et al. is as follows:
+
+1. For a lake polygon, calculate the further distance from shoreline in the lake.
+2. Identify all catchments intersected by the lake polygon.
+3. Clip the catchments in (2) to only the geometry within the distance calculated in (1).
+
+This procedure was performed by calculating the maximum distance to shoreline using the _Pole of inaccessibility_ tool in QGIS[@qgisdevelopmentteamQGISGeographicInformation2020]. A buffer region was created for each lake using this distance. Simplified catchments from The National Hydrography Dataset were clipped to these buffer regions (https://www.epa.gov/water-data-and-tools/nhdplus-simplified-catchment-extension-files). Finally, a unique lake identifier was joined to each catchment and the catchments were dissolved by lake identifier to form the final dynamic buffers.
+
+# Results
+## Paired Sample Comparison
+The most important variable for depth modeling is median slope within the buffer region. We first consider whether this value appreciably changes when a different buffering procedure is used. For our purposes, slope is used to construct the linear term $D_{max} \times S_1$ in the maximum depth model. So, we will consider whether the value of this term appreciably changes when the buffer method is changed.
+
+```{r read-data}
+static <- read_csv("data_out/nla_terrain_gee.csv")
+hollister <- read_csv("data_out/nla_hollister_gee.csv")
+```
+
+```{r slope-diff-test}
+slope_compare <- static %>%
+  select(NLAID, slope200_median, dist_pole, maxdepth) %>%
+  rename(slope_static = slope200_median) %>%
+  inner_join(hollister %>% select(NLAID, slope_median, vcurv_max), by="NLAID") %>%
+  rename(slope_hollister = slope_median) %>%
+  # convert static slope to rise/run
+  mutate(linear_depth_static = tan(slope_static * pi / 180) * dist_pole,
+         linear_depth_hollister = slope_hollister * dist_pole,
+         linear_depth_diff = linear_depth_static - linear_depth_hollister) %>%
+  # filter out one garbage point
+  filter(linear_depth_diff > -100)
+
+wilcox.test(slope_compare$linear_depth_static,
+            slope_compare$slope_hollister,
+            alternative="greater")
+```
+```{r slope-compare-plot}
+
+ggplot(slope_compare, aes(x=linear_depth_diff)) + geom_histogram() +
+  labs(y="Count", x="Difference in Linear Depth Term (m)")
+```
+
+The Wilcoxon test indicates that the dynamic buffer results in a slightly greater slope estimate. We know that simple linear modeling of lake depth with slope results in overestimation, so we would expect this result to make this issue worse.
+
+## Model Performance Comparison
+We will compare bias-corrected maximum lake depth models constructed from slope in a static buffer and slope in the buffering procedure described above.
+
+```{r compare-slope-lms}
+slope_compare_lm <- slope_compare %>%
+  select(maxdepth, linear_depth_static, linear_depth_hollister) %>%
+  pivot_longer(contains("linear_depth")) %>%
+  rename(linear_depth=value,
+         buffer=name) %>%
+  lm(maxdepth ~ linear_depth*buffer, data=.)
+
+slope_compare_lm %>%
+  anova()
+```
+
+The ANOVA comparing both of these linear models is not significant, so we can conclude that the buffer procedure used does not affect the relationship between the linear depth term and maximum depth.
+
+Finally, we plot the regression lines.
+
+```{r compare-slope-plot}
+slope_compare_plot <- slope_compare %>%
+  select(maxdepth, linear_depth_static, linear_depth_hollister) %>%
+  pivot_longer(contains("linear_depth")) %>%
+  rename(linear_depth=value,
+         buffer=name)
+
+slope_compare_plot$predicted_depth <- predict(slope_compare_lm, data=slope_compare_plot)
+
+slope_compare_plot %>%
+  mutate(buffer=recode(
+    buffer,
+    "linear_depth_hollister"="Dynamic Buffer",
+    "linear_depth_static"="Static 200m Buffer")) %>%
+  ggplot(aes(x=predicted_depth, y=maxdepth, color=buffer)) + 
+  geom_smooth(method="lm", formula=y~x) + geom_point(alpha=0.5) +
+  labs(y="Maximum Depth (m)", x="Predicted Depth (m)", color="Buffer Type")
+```
+
+As is evident, the change in slope does not have a significant effect on the line of best fit.
+
+# References

@@ -137,7 +137,8 @@ vcurv_pred <- vcurv %>%
          `Linear Model`=zhat_linear) %>%
   drop_na() %>%
   # throw out garbage row
-  filter(`Quadratic Model` > 0)
+  filter(`Quadratic Model` > 0,
+         `Linear Model` > 0)
 
 vcurv_pred %>%
   pivot_longer(contains("Model")) %>%
@@ -172,10 +173,13 @@ summary(quad_lm)
 
 Finally, we can use a general additive model (GAM) which uses the linear and quadratic terms as predictors. First, we use only the linear term.
 
-```{r linear-lin-mod}
-linear_lm <- vcurv %>%
-  lm(maxdepth ~ dist_pole:slope200_median, data=.)
-summary(linear_lm)
+```{r linear-gam}
+linear_gam <- vcurv %>%
+  mutate(linear_term = dist_pole * slope200_median) %>%
+  drop_na() %>%
+  gam(maxdepth ~ s(linear_term), data=.)
+
+summary(linear_gam)
 ```
 
 The deviance explained is similar to other linear models we have seen.
@@ -190,9 +194,9 @@ quad_gam <- vcurv %>%
 summary(quad_gam)
 ```
 
-When we add the quadratic term, the Deviance explained increases by about 50%.
+When we add the quadratic term, the Deviance explained increases by about 10%.
 
 # Conclusions
-Including profile curvature as a quadratic term in the linear depth modeling equation improves model accuracy by preventing overestimation in the linear term. In order to directly compare the quadratic model to the linear model, we must completely reproduce the spatial workflow presented in Hollister et al. 
+Including profile curvature as a quadratic term in the linear depth modeling equation improves model accuracy by preventing overestimation in the linear term. However, the improvement is slight. 
 
 # References
