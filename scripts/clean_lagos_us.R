@@ -5,12 +5,15 @@
 
 library(tidyverse)
 
-# read data - pull in the crosswalk and all lagos tables
+# Read data - pull in the crosswalk and all lagos tables
 # they're really big, so immediately filter down to the lakes we care about
-xwalk <- read_csv(
-  "data_working/lagos_mglp_info_join.csv", col_types=cols(lagoslakeid=col_character())
-  ) %>%
-    select(lagoslakeid, lake_nhdid)
+# xwalk <- read_csv(
+#   "data_working/lagos_mglp_info_join.csv", col_types=cols(lagoslakeid=col_character())
+#   ) %>%
+#     select(lagoslakeid, lake_nhdid)
+
+# If not using a crosswalk, grab the depths you care about here
+lagoslakeids <- read_csv("data_working/lagos_ne_depths.csv") %>% pull(lagoslakei)
 
 read_lake_subset <- function(file, lakeids) {
   f <- read_csv(file, col_types = cols(.default=col_character())) %>% 
@@ -19,30 +22,27 @@ read_lake_subset <- function(file, lakeids) {
 
 lagos_net <- read_lake_subset(
   "data_in/lagos/LAGOS_US_LOCUS/nets_networkmetrics_medres.csv",
-  xwalk$lagoslakeid)
+  lagoslakeids)
 
 lagos_ws <- read_lake_subset(
   "data_in/lagos/LAGOS_US_LOCUS/lake_watersheds.csv",
-  xwalk$lagoslakeid
+  lagoslakeids
 )
 
 lagos_char <- read_lake_subset(
   "data_in/lagos/LAGOS_US_LOCUS/lake_characteristics.csv",
-  xwalk$lagoslakeid
+  lagoslakeids
 )
 
 lagos_info <- read_lake_subset(
   "data_in/lagos/LAGOS_US_LOCUS/lake_information.csv",
-  xwalk$lagoslakeid
+  lagoslakeids
 )
 
 # First build the geography table - Lat/lon, glaciation, NHD Unit, WS Area, 
 # Ws:Lake area ratio
-mglp_lagos_geography <- xwalk %>%
-  inner_join(
-    lagos_char %>% 
-      select(lagoslakeid, lake_glaciatedlatewisc), 
-    by="lagoslakeid") %>%
+lagos_geography <- lagos_char %>% 
+  select(lagoslakeid, lake_glaciatedlatewisc) %>%
   inner_join(
     lagos_info %>% 
       select(lagoslakeid, lake_lat_decdeg, lake_lon_decdeg, lake_huc12),
@@ -55,12 +55,8 @@ mglp_lagos_geography <- xwalk %>%
 
 # This table is kind of small unfortunately. We can't join into the above
 # tables without losing some data, so we should just hang on to everything.
-mglp_lagos_network <- xwalk %>%
-  inner_join(
-    lagos_net,
-    by="lagoslakeid"
-  )
+lagos_network <- lagos_net # no joining necessary
 
 # Save out all this delicious data
-write_csv(mglp_lagos_geography, "data_out/mglp_lagos_geography.csv")
-write_csv(mglp_lagos_network, "data_out/mglp_lagos_network.csv")
+write_csv(lagos_geography, "data_out/lagos_ne_geography.csv")
+write_csv(lagos_network, "data_out/lagos_ne_network.csv")

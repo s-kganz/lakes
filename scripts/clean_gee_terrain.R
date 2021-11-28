@@ -3,18 +3,21 @@
 
 library(tidyverse)
 
-gee_terrain <- read_csv("data_in/gee/mglp_lagos_terrain_metrics.csv") %>%
+ID_COL <- "lagoslakei"
+
+gee_terrain <- read_csv("data_in/gee/lagos_ne_terrain_metrics.csv") %>%
   select(-c(`system:index`, .geo, random)) %>%
   rename(metric=stat) %>%
   pivot_longer(c(min, max, median), names_to="stat") %>%
   mutate(colname = str_c(metric, "_", stat)) %>%
   select(-c(metric, stat)) %>%
-  pivot_wider(id_cols=c(lake_nhdid, colname), names_from=colname, values_from=value) %>%
+  # if there are duplicate polygons, their metrics should be the same
+  # so, just take the first from eahc column
+  pivot_wider(id_cols=c(ID_COL, colname), names_from=colname, values_from=value,
+              values_fn = first) %>%
   select(-`NA`) %>%
   # throw out the one NA row at the bottom
-  filter(!is.na(lake_nhdid)) %>%
-  # make everything not a list column
-  mutate(across(.cols=-lake_nhdid, unlist))
+  filter(!is.na(ID_COL))
 
 gee_terrain %>%
-  write_csv("data_out/mglp_lagos_terrain.csv")
+  write_csv("data_out/lagos_ne_terrain.csv")
