@@ -55,7 +55,11 @@ def removeGeometry(feature):
   return feature.setGeometry(None)
 
 # define the reducer for reduceRegions calls
-superReducer = ee.Reducer.median().combine(ee.Reducer.minMax(), "", True)
+superReducer = ee.Reducer.median().combine(
+    ee.Reducer.minMax(), "", True
+  ).combine(
+    ee.Reducer.sampleStdDev(), "", True
+  )
 
 # factory function for making reduceRegion calls
 def doReduceRegion(image, collection, fun, kernel, stat):
@@ -88,15 +92,6 @@ def doReduceRegion(image, collection, fun, kernel, stat):
         .map(removeGeometry)
         .map(lambda x: x.set("stat", stat))
     )
-
-# set up the vertical curvature computation
-# smooth the DEM
-gaussianFilter = ee.Kernel.gaussian(
-  radius=3, sigma=2, units='pixels', normalize=True
-)
-
-# Smooth the DEM
-srtm_smooth=srtm.convolve(gaussianFilter).resample("bilinear")
 
 # make a kernel for each length scale
 k50=ee.Kernel.circle(50, "meters")
