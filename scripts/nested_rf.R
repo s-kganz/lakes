@@ -152,3 +152,5 @@ validdf_predicted <- validdf %>%
 
 cor(validdf_predicted$zmaxobs, validdf_predicted$predicted_zmax) ^ 2
 sqrt(mean((validdf_predicted$zmaxobs - validdf_predicted$predicted_zmax)^2))
+
+# Doesn't work at all!
