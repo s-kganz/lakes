@@ -4,6 +4,7 @@ import pprint
 import os
 ee.Initialize()
 
+SCALE=30 #m
 srtm = ee.Image("USGS/SRTMGL1_003").resample("bilinear")
 
 # terrain ruggedness index
@@ -68,7 +69,8 @@ def doReduceRegion(image, collection, fun, kernel, stat):
     # this is just an identity
     return (image.reduceRegions(
             collection=collection,
-            reducer=superReducer
+            reducer=superReducer,
+            scale=SCALE
         )
         .map(removeGeometry)
         .map(lambda x: x.set("stat", stat)))
@@ -77,7 +79,8 @@ def doReduceRegion(image, collection, fun, kernel, stat):
     return ( 
         fun(image).reduceRegions(
             collection = collection,
-            reducer = superReducer
+            reducer = superReducer,
+            scale=SCALE
         )
         .map(removeGeometry)
         .map(lambda x: x.set("stat", stat))
@@ -87,7 +90,8 @@ def doReduceRegion(image, collection, fun, kernel, stat):
     return  (
         fun(image, kernel).reduceRegions(
             collection = collection,
-            reducer = superReducer
+            reducer = superReducer,
+            scale=SCALE
         )
         .map(removeGeometry)
         .map(lambda x: x.set("stat", stat))
