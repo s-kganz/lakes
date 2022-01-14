@@ -5,7 +5,8 @@ library(tidyverse)
 nla07 <- read_csv(
   "data_in/nla/nla2007/nla2007_sampledlakeinformation_20091113.csv"
 ) %>%
-  select(SITE_ID, DEPTHMAX, LON_DD, LAT_DD)
+  select(SITE_ID, DEPTHMAX, LON_DD, LAT_DD) %>%
+  mutate(YEAR=2007)
 
 nla12 <- read_csv(
   "data_in/nla/nla2012/nla12_keyvariables_data.txt"
@@ -13,7 +14,8 @@ nla12 <- read_csv(
   select(SITE_ID, INDEX_LAT_DD, INDEX_LON_DD, INDEX_SITE_DEPTH) %>%
   rename(LAT_DD = INDEX_LAT_DD,
          LON_DD = INDEX_LON_DD,
-         DEPTHMAX = INDEX_SITE_DEPTH)
+         DEPTHMAX = INDEX_SITE_DEPTH) %>%
+  mutate(YEAR=2012)
 
 nla17 <- read_csv(
   "data_in/nla/nla2017/nla_2017_profile-data.csv"
@@ -24,7 +26,8 @@ nla17 <- read_csv(
   rename(DEPTHMAX=INDEX_SITE_DEPTH,
          LAT_DD = INDEX_LAT_DD,
          LON_DD = INDEX_LON_DD) %>%
-  mutate(LON_DD = parse_double(LON_DD))
+  mutate(LON_DD = parse_double(LON_DD)) %>%
+  mutate(YEAR=2017)
 
 nla07 %>%
   bind_rows(nla12) %>%
