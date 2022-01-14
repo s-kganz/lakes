@@ -125,8 +125,9 @@ def doOneExport(collection):
         doReduceRegion(srtm, collection, relief, k100, "relief100"),
         doReduceRegion(srtm, collection, relief, k500, "relief500"),
         doReduceRegion(srtm, collection, relief, k1000, "relief1000"),
-        # scale-independent function
+        # scale-independent functions
         doReduceRegion(srtm, collection, ee.Terrain.slope, None, "slope"),
+        doReduceRegion(srtm, collection, tri, None, "tri"),
         # identity on things that are already calculated
         doReduceRegion(srtm, collection, None, None, "elev"),
     ])
