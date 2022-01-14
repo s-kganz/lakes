@@ -33,3 +33,20 @@ nla07 %>%
   bind_rows(nla12) %>%
   bind_rows(nla17) %>%
   write_csv("data_working/nla/nla_combined_depths.csv")
+
+# -- do a spatial join in QGIS to add lagoslakeid to the table --
+# it breaks if I try to do it in R
+
+depths <- read_csv("data_working/nla/nla_combined_depths.csv") %>%
+  # discard rows where observations from year to year are different by >10m
+  group_by(lagoslakei) %>%
+  filter((max(DEPTHMAX) - min(DEPTHMAX)) < 10) %>%
+  # keep only the most recent observation
+  filter(YEAR == max(YEAR)) %>%
+  # mean of the most recent observation year
+  summarize(
+    year = first(YEAR),
+    maxdepth = mean(DEPTHMAX)
+  ) %>%
+  write_csv("data_working/nla/nla_combined_depths_nodupes.csv")
+  
