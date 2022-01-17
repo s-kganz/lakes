@@ -13,7 +13,8 @@ library(tidyverse)
 #     select(lagoslakeid, lake_nhdid)
 
 # If not using a crosswalk, grab the depths you care about here
-lagoslakeids <- read_csv("data_working/lagos_ne_depths.csv") %>% pull(lagoslakei)
+lagoslakeids <- read_csv("data_in/lagos/LAGOS_US_LOCUS/lake_depth.csv") %>% 
+  pull(lagoslakeid)
 
 read_lake_subset <- function(file, lakeids) {
   f <- read_csv(file, col_types = cols(.default=col_character())) %>% 
@@ -42,10 +43,12 @@ lagos_info <- read_lake_subset(
 # First build the geography table - Lat/lon, glaciation, NHD Unit, WS Area, 
 # Ws:Lake area ratio
 lagos_geography <- lagos_char %>% 
-  select(lagoslakeid, lake_glaciatedlatewisc) %>%
+  select(lagoslakeid, lake_glaciatedlatewisc, lake_connectivity_class,
+         contains("upstream")) %>%
   inner_join(
     lagos_info %>% 
-      select(lagoslakeid, lake_lat_decdeg, lake_lon_decdeg, lake_huc12),
+      select(lagoslakeid, lake_lat_decdeg, lake_lon_decdeg, 
+             lake_huc12, lake_elevation_m),
     by="lagoslakeid") %>%
   inner_join(
     lagos_ws %>%
@@ -58,5 +61,5 @@ lagos_geography <- lagos_char %>%
 lagos_network <- lagos_net # no joining necessary
 
 # Save out all this delicious data
-write_csv(lagos_geography, "data_out/lagos_ne_geography.csv")
-write_csv(lagos_network, "data_out/lagos_ne_network.csv")
+write_csv(lagos_geography, "data_out/lagos_us_geography.csv")
+write_csv(lagos_network, "data_out/lagos_us_network.csv")
