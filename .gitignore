@@ -5,3 +5,4 @@ data_working/
 parameter_list
 presentation
 data_out/lagos*.csv
+__pycache__/
