@@ -6,3 +6,5 @@ parameter_list
 presentation
 data_out/lagos*.csv
 __pycache__/
+*.nb.html
+*.pdf
