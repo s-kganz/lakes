@@ -1,0 +1,95 @@
+---
+title: "Modeling Maximum Depth for all Lakes in the United States"
+author:
+- Keenan Ganz
+output:
+  pdf_document:
+    extra_dependencies: ["booktabs"]
+bibliography: C:\\users\\ganzk\\desktop\\lakes\\notebooks\\bibliography.bib
+csl: C:\\users\\ganzk\\desktop\\lakes\\notebooks\\american-institute-of-physics.csl
+nocite: |
+  @oliverPredictionLakeDepth2016, @heathcotePredictingBathymetricFeatures2015 |
+  @sobekPredictingDepthVolume2011, hollisterPredictingMaximumLake2011a
+---
+
+```{r setup, echo=F, message=F}
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+```{r libraries}
+library(igraph)
+library(sf)
+library(tidyverse)
+library(caret)
+library(randomForest)
+library(ggridges)
+library(latex2exp)
+library(mgcv)
+```
+
+# Introduction
+```{r previous-model-table}
+tibble(
+  "Citation"=c("Oliver et al. (2016)", "Hollister et al. (2011)", "Heathcote et al. (2015)", "Sobek (2011)"),
+  "Region"=c("Northeastern United States", "NHD HUC 01 and 02", "Southern Quebec, Canada", "Sweden"),
+  "Model"=c("Linear mixed effects (regional and observational)", "$\\hat{Z} \\approx D \\cdot S_{median}$", "Log-transformed linear regression", "Log-transformed linear regression and partial least squares regression"),
+  "Most Important Predictor"=c("Not reported", "Median slope", "Elevation change 25m from lake", "Lake area, perimeter, median slope"),
+  "Maximum Depth $R^2$"=c(0.29, "0.48-0.67", 0.52, 0.36),
+  "RMSE"=c("7.1m", "5.09-5.95m", "0.245 $\\log_{10}$m", "Not reported")
+) %>%
+  knitr::kable(caption="Summary of existing models of maximum lake depth, using local topography and regional characteristics. $\\hat{Z}$: maximum lake depth; $D$: maximum distance from shore in lake; $S_{median}$: median slope in lake catchment.")
+```
+
+# Methods
+## Lake Data Sources
+Lake polygons, depth measurements, and other lake attributes were derived from LAGOS-US LOCUS and DEPTH modules[@cheruvelilLAGOSUSLOCUSV12021; @stachelekLAGOSUSDEPTHV12021]. Candidate predictor variables were identified from the four tables included in the LOCUS module. Polygon attributes, including area, perimeter, shoreline development index, maximum distance from shoreline, and oriented bounding box length-width ratio, were calculated within QGIS[@qgisdevelopmentteamQGISGeographicInformation2021].
+
+## Terrain Analysis
+Terrain metrics were derived from the Shuttle Radar Topography Mission 30m digital elevation model (DEM) with bilinear resampling within 200m buffer zones around each lake polygon [@farrShuttleRadarTopography2007]. This buffer distance was selected to emphasize nearshore topography while also ensuring sufficient DEM pixels were contained in each buffer zone. Although higher-resolution elevation products are available in the US, the SRTM DEM offers global coverage such that the depth model described here may be extended outside of the US. All terrain metrics were calculated within Google Earth Engine (GEE)[@gorelickGoogleEarthEngine2017a]. 
+
+Within each buffer zone, the median, minimum, maximum, and sample standard deviation of each terrain metric was calculated. Elevation and slope were calculated using GEE functions. Horizontal and vertical curvature were calculated using the TAGEE package[@safanelliTerrainAnalysisGoogle2020]. The terrain roughness index was calculated as the mean squared elevation difference between a central pixel and its eight adjacent pixels.
+
+The above terrain metrics only considered one elevation pixel and its neighbors. To capture topographic features larger than the cell size of the DEM, kernel-based terrain metrics were also calculated. These metrics were computed by considering the sample of elevation values within a given distance of the central pixel. Terrain deviation was calculated as the number of standard deviations above or below the kernel mean. Terrain relief was calculated as the maximum absolute elevation difference between the central pixel and all other pixels in the kernel. Relief and deviation were calculated at 50, 100, 500, and 1000m scales.
+
+The cone approximation of maximum lake depth from Hollister et al. may be thought of as an extension of the nearshore elevation profile below the waterline. Taking vertical curvature as the second derivative of this elevation profile, it was hypothesized that adding a quadratic term to this model would reduce overestimation of maximum lake depth and add predictive power to a nonlinear model.
+
+## Spatial Autocorrelation
+After Oliver et al., variables describing nearshore topography, lake shape, and depth were summarized within each HUC4 unit to include potential spatial autocorrelation in the depth model.
+
+## Modeling Workflow
+### Feature Selection
+The above analysis workflow generated a tabular dataset with 106 covariates of maximum lake depth. Considering prior models included as few as 2 covariates, feature selection was performed with the R package `Boruta` to identify relevant covariates. The Boruta algorithm proceeds by generating a random forest model for a regression problem and iteratively comparing the importance of a candidate covariate with random noise[@kursaFeatureSelectionBoruta2010]. Covariates that outperformed random noise were retained in subsequent steps while others were discarded.
+
+### Model Evaluation
+Comparison of existing lake depth models is impeded by inconsistent source data and relatively small study area. All models in 
+
+<!-- # Introduction -->
+<!--  - Summary of prior models in the literature -->
+<!-- # Methods -->
+<!-- ## Data Sources -->
+<!--  - LAGOS US, LAGOS NE, NLA -->
+<!-- ## Terrain Analysis -->
+<!--  - 30m SRTM DEM -->
+<!--  - Elevation, Slope, Curvature -->
+<!--  - Kernel-based metrics -->
+<!-- ## Modeling Workflow -->
+<!--   - Feature selection -->
+<!--   - Monte Carlo test for significance -->
+<!-- ## Lake volume estimation -->
+<!--   - cone approximation -->
+<!-- # Results -->
+<!-- # Discussion -->
+
+<!-- Key figures and tables -->
+<!-- Table 1: Summary of previous modeling studies -->
+<!--   Ref, equation, location, n, R2, RMSE -->
+<!-- Table 2: Summary of candidate predictors and where they come from -->
+<!-- Table 3: Summary of modeling results -->
+<!--   Ref, R2 (RMSE) for NLA, LAGOS NE, LAGOS US -->
+
+<!-- Figure 2: Diagram of why curvature improves depth estimate -->
+<!-- Figure 1: 1:1 plots for each of the tested models (training & validation) -->
