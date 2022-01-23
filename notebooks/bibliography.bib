@@ -1,4 +1,22 @@
 
+@article{breimanRandomForests2001,
+	title = {Random {Forests}},
+	volume = {45},
+	issn = {1573-0565},
+	url = {https://doi.org/10.1023/A:1010933404324},
+	doi = {10.1023/A:1010933404324},
+	abstract = {Random forests are a combination of tree predictors such that each tree depends on the values of a random vector sampled independently and with the same distribution for all trees in the forest. The generalization error for forests converges a.s. to a limit as the number of trees in the forest becomes large. The generalization error of a forest of tree classifiers depends on the strength of the individual trees in the forest and the correlation between them. Using a random selection of features to split each node yields error rates that compare favorably to Adaboost (Y. Freund \& R. Schapire, Machine Learning: Proceedings of the Thirteenth International conference, ***, 148–156), but are more robust with respect to noise. Internal estimates monitor error, strength, and correlation and these are used to show the response to increasing the number of features used in the splitting. Internal estimates are also used to measure variable importance. These ideas are also applicable to regression.},
+	language = {en},
+	number = {1},
+	urldate = {2020-09-12},
+	journal = {Machine Learning},
+	author = {Breiman, Leo},
+	month = oct,
+	year = {2001},
+	pages = {5--32},
+	file = {Springer Full Text PDF:C\:\\Users\\ganzk\\Zotero\\storage\\G4M4GJDG\\Breiman - 2001 - Random Forests.pdf:application/pdf},
+}
+
 @article{gorelickGoogleEarthEngine2017a,
 	series = {Big {Remotely} {Sensed} {Data}: tools, applications and experiences},
 	title = {Google {Earth} {Engine}: {Planetary}-scale geospatial analysis for everyone},
@@ -35,6 +53,9 @@
 	month = sep,
 	year = {2011},
 	pages = {e25764},
+	annote = {Make a similar hypothesis as Oliver - steeper catchment means deeper lake.
+Used catchments from NHDPlus, then clipped these if they were outside a specified buffer range.
+Predicted depth for all grid cells within a lake: Z = S\_median * D. D = distance from shore, S = slope within the surrounding catchment. This was generally an overestimate and had to be bias corrected with field data.},
 	file = {Hollister et al. - 2011 - Predicting Maximum Lake Depth from Surrounding Top.pdf:C\:\\Users\\ganzk\\Zotero\\storage\\UIEHE2YG\\Hollister et al. - 2011 - Predicting Maximum Lake Depth from Surrounding Top.pdf:application/pdf},
 }
 
@@ -53,6 +74,8 @@
 	month = dec,
 	year = {2011},
 	pages = {177--184},
+	annote = {Used PCA and PLSR to identify important variables, then used those in a linear multiple regression model. Log-transformed non-normal variables.
+Stratification by geographic region was not very useful},
 	file = {Sobek - 2011 - Predicting the depth and volume of lakes from map-.pdf:C\:\\Users\\ganzk\\Zotero\\storage\\EYPEXER6\\Sobek - 2011 - Predicting the depth and volume of lakes from map-.pdf:application/pdf},
 }
 
@@ -72,6 +95,13 @@
 	month = may,
 	year = {2015},
 	pages = {643--650},
+	annote = {Many ecosystem processes are best predicted by lake depth, not lake size
+A few modeling approaches: consider local relief, mean local slope, similar measures w/in a buffer},
+	annote = {Mean depth = lake volume / lake area},
+	annote = {They extracted local topography from a buffer zone that depended upon lake size. Considered mean, max, min slope and the difference in mean elevation and lake elevation.
+Model: multiple regression with log10 transformation of predictors; used bias correction to calculate the model inverse.
+Lake area \& elevation change were the best predictors
+Their dynamic buffer calculation performed best when scaled by 25\%},
 	file = {Heathcote et al. - 2015 - Predicting bathymetric features of lakes from the .pdf:C\:\\Users\\ganzk\\Zotero\\storage\\HAP5V7W5\\Heathcote et al. - 2015 - Predicting bathymetric features of lakes from the .pdf:application/pdf},
 }
 
@@ -124,6 +154,11 @@
 	month = jan,
 	year = {2016},
 	pages = {314--324},
+	annote = {Log-transformed variables before modeling - used a mixed model with predictors at the regional level and the observational level. Used HUC4 units to stratify by catchment region.  },
+	annote = {Sobek found that stratification of lakes by geographic region did not improve predictive power, BUT in this study stratification by hydrologic region did improve predictive power. Although, a different modeling approach was used here (mixed effects) than in Sobek.
+Several authors find that lake features very close to the lake (within 100m) are the most effective predictors of depth.},
+	annote = {They suggest that sedimentation and erosion processes would affect lake depth and that these processes depend on local topography. E.g. a steep catchment increases the sedimentation effect on lake depth relative to a flat catchment.
+Found some interaction terms between local slope and lake surface area: "lakes of similar size are deeper if they are situated in steep versus flat terrain". Smaller lakes with simple shorelines were also deeper. Shoreline complexity is useful when the lake has a large watershed relative to its surface area.},
 	file = {Oliver et al. - 2016 - Prediction of lake depth across a 17-state region .pdf:C\:\\Users\\ganzk\\Zotero\\storage\\R2HRN6EY\\Oliver et al. - 2016 - Prediction of lake depth across a 17-state region .pdf:application/pdf},
 }
 
@@ -256,6 +291,7 @@ Subject\_term\_id: hydrology;limnology},
 \_eprint: https://doi.org/10.1080/14702540801897809},
 	keywords = {computer method, Distance to sea},
 	pages = {227--233},
+	annote = {The "Pole of relative inaccessibility" tool in QGIS uses a modified version of this algo to get inaccessible points.},
 	file = {Snapshot:C\:\\Users\\ganzk\\Zotero\\storage\\5VBAW9NH\\14702540801897809.html:text/html;Submitted Version:C\:\\Users\\ganzk\\Zotero\\storage\\BWHXNJQF\\Garcia-Castellanos and Lombardo - 2007 - Poles of inaccessibility A calculation algorithm .pdf:application/pdf},
 }
 
@@ -404,6 +440,7 @@ Publisher: Multidisciplinary Digital Publishing Institute},
 	url = {https://cran.r-project.org/package=LAGOSNE},
 	author = {Stachelek, Joseph and Oliver, Samantha and Masrour, Farzan},
 	year = {2019},
+	annote = {R package version 2.0.2},
 }
 
 @article{kursaFeatureSelectionBoruta2010,
@@ -437,6 +474,11 @@ Publisher: Multidisciplinary Digital Publishing Institute},
 	url = {https://stats.stackexchange.com/questions/283889/the-p-value-for-the-random-forest-regression-model},
 	urldate = {2021-11-24},
 	journal = {Cross Validated},
+	annote = {Simple procedure for determining the p-value for a random forest model.
+1. Make a new, random dependent variable
+2. Fit an RF
+3. Quantify \% variance explained
+Repeat 1-3 10,000 times, get a hypothetical distribution of variances explained. Then plot the actual model on the distribution. What \% of simulations explain more variance than the actual model? This is a "pretty close" p-value.},
 	file = {Snapshot:C\:\\Users\\ganzk\\Zotero\\storage\\69J82I4M\\the-p-value-for-the-random-forest-regression-model.html:text/html},
 }
 
@@ -514,4 +556,43 @@ Publisher: Multidisciplinary Digital Publishing Institute},
 	year = {2022},
 	pages = {1--11},
 	file = {Stachelek et al. - 2022 - Imperfect slope measurements drive overestimation .pdf:C\:\\Users\\ganzk\\Zotero\\storage\\SPCLCRP2\\Stachelek et al. - 2022 - Imperfect slope measurements drive overestimation .pdf:application/pdf},
+}
+
+@article{cheruvelilLAGOSUSLOCUSV12021,
+	title = {{LAGOS}-{US} {LOCUS} v1.0: {Data} module of location, identifiers, and physical characteristics of lakes and their watersheds in the conterminous {U}.{S}.},
+	volume = {6},
+	issn = {2378-2242},
+	shorttitle = {{LAGOS}-{US} {LOCUS} v1.0},
+	url = {https://onlinelibrary.wiley.com/doi/abs/10.1002/lol2.10203},
+	doi = {10.1002/lol2.10203},
+	abstract = {Macroscale studies of aquatic ecosystems are needed to address many contemporary broad-scale problems related to global change, particularly to inform national-scale environmental policies. In this data paper, we fill two important gaps in data availability for lakes at the scale of the conterminous U.S., the lack of: (1) high-resolution geographic representations of lakes and their watersheds and (2) an open data platform to connect disparate U.S. national-scale lake datasets. We describe the LAGOS-US LOCUS v1.0 data module that includes a detailed User Guide, which is part of the LAGOS-US extensible research-ready open data platform. This platform can be used to study the 479,950 lakes and reservoirs larger than or equal to 1 ha across the entire conterminous U.S. at multiple scales of space and time. The LOCUS module includes spatially-explicit information on lakes and their watersheds, including location information, physical characteristics, and identifiers of other important national-scale datasets.},
+	language = {en},
+	number = {5},
+	urldate = {2022-01-19},
+	journal = {Limnology and Oceanography Letters},
+	author = {Cheruvelil, Kendra Spence and Soranno, Patricia A. and McCullough, Ian M. and Webster, Katherine E. and Rodriguez, Lauren K. and Smith, Nicole J.},
+	year = {2021},
+	note = {\_eprint: https://onlinelibrary.wiley.com/doi/pdf/10.1002/lol2.10203},
+	pages = {270--292},
+	file = {Full Text PDF:C\:\\Users\\ganzk\\Zotero\\storage\\B8UC3A5K\\Cheruvelil et al. - 2021 - LAGOS-US LOCUS v1.0 Data module of location, iden.pdf:application/pdf;Snapshot:C\:\\Users\\ganzk\\Zotero\\storage\\ZFLUWCLD\\lol2.html:text/html},
+}
+
+@article{wrightRangerFastImplementation2017,
+	title = {ranger: {A} {Fast} {Implementation} of {Random} {Forests} for {High} {Dimensional} {Data} in {C}++ and {R}},
+	volume = {77},
+	copyright = {Copyright (c) 2017 Marvin N. Wright, Andreas Ziegler},
+	issn = {1548-7660},
+	shorttitle = {ranger},
+	url = {https://doi.org/10.18637/jss.v077.i01},
+	doi = {10.18637/jss.v077.i01},
+	abstract = {We introduce the C++ application and R package ranger. The software is a fast implementation of random forests for high dimensional data. Ensembles of classification, regression and survival trees are supported. We describe the implementation, provide examples, validate the package with a reference implementation, and compare runtime and memory usage with other implementations. The new software proves to scale best with the number of features, samples, trees, and features tried for splitting. Finally, we show that ranger is the fastest and most memory efficient implementation of random forests to analyze data on the scale of a genome-wide association study.},
+	language = {en},
+	urldate = {2022-01-23},
+	journal = {Journal of Statistical Software},
+	author = {Wright, Marvin N. and Ziegler, Andreas},
+	month = mar,
+	year = {2017},
+	keywords = {survival analysis},
+	pages = {1--17},
+	file = {Full Text:C\:\\Users\\ganzk\\Zotero\\storage\\WGV7U546\\Wright and Ziegler - 2017 - ranger A Fast Implementation of Random Forests fo.pdf:application/pdf},
 }
