@@ -6,7 +6,7 @@ library(tfdatasets)
 source("scripts/util.R")
 
 model_df <- read_csv("data_working/lagosus/lagos_us_model_df.csv") %>%
-  rename(log_quad_term = quad_term)
+  filter(area < 1e7)
 
 # the prediction formula comes from Boruta
 load("data_working/lagosus/lagos_us_boruta")
@@ -61,8 +61,8 @@ build_model <- function() {
   
   output <- input %>% 
     layer_dense_features(dense_features(my_spec)) %>% 
-    layer_dense(units = 75, activation="relu",
-                kernel_regularizer = regularizer_l2(0.1)) %>%
+    layer_dense(units = 16, activation="relu",
+                kernel_regularizer = regularizer_l2(1)) %>%
     layer_dropout(rate=0.1) %>%
     layer_dense(units = 1) 
   
@@ -85,7 +85,7 @@ model <- build_model()
 history <- model %>% fit(
   x = traindf %>% select(-maxdepth),
   y = traindf$maxdepth,
-  epochs = 10,
+  epochs = 25,
   validation_split = 0.2,
   verbose = 2,
   callbacks = list(early_stop)
@@ -107,7 +107,7 @@ validdf$nn_depth <- predict(model, validdf %>% select(-maxdepth))[, 1]
 ggplot(validdf, aes(x=maxdepth, y=nn_depth)) + 
   geom_abline(slope=1, intercept=0, color="red") +
   geom_point() +
-  xlim(0, 200) +
+  xlim(0, 100) +
   coord_equal()
 
 cor(validdf$maxdepth, validdf$nn_depth) ^ 2
