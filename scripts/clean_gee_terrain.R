@@ -12,10 +12,19 @@ ID_COL <- "lagoslakei"
 #gee_terrain <- read_csv("data_in/gee/lagos_ne_terrain_metrics.csv") %>%
 
 # Otherwise, use vroom to concat many files together
-files <- list.files("data_in/gee/lagosus_by_huc8/lagos_us_by_huc8/", "*.csv",
+files <- list.files("data_in/gee/lagos_us_fall_temp_by_huc8/", "*.csv",
                     include.dirs=T, full.names=T)
 
 gee_terrain <- vroom(files)
+
+# If the files do not all have the same columns
+gee_temp    <- map_df(files, ~vroom(.x, progress=FALSE, show_col_types=FALSE))
+
+gee_temp %>%
+  select(lagoslakei, first) %>%
+  rename(lagoslakeid=lagoslakei,
+         fall_temp_anomaly_k=first) %>%
+  write_csv("data_working/lagosus/fall_temp_anomaly.csv")
 
 cleaned <- gee_terrain %>%
   select(-c(`system:index`, .geo, hu8_zoneid)) %>%
