@@ -11,8 +11,8 @@ shape <- read_csv("data_out/lagos_us_shape.csv") %>%
   ) %>%
   mutate(hasDepth = is.na(maxdepth))
 
-area_cdf <- ecdf(log10(shape$area))
-plot(area_cdf)
+#area_cdf <- ecdf(log10(shape$area))
+#plot(area_cdf)
 
 # From area 1e4 to 1e9, what % of lakes larger than the cutoff have depth measurements?
 cutoffs <- seq(4, 9, by=0.5)
@@ -27,9 +27,13 @@ cutoffs_ha <- cutoffs - 4
 
 plot(cutoffs_ha, pct_depth)
 
-depth_proportion <- ggplot(data=NULL, aes(x=cutoffs_ha, y=pct_depth)) + geom_point() +
+ggplot(data=NULL, aes(x=cutoffs_ha, y=pct_depth)) + geom_point() +
   labs(y=TeX("Proportion with known $Z_{max}$"),
        x="Minimum lake area (log ha)") +
   geom_vline(xintercept = 3, linetype="dashed")
 
+ggsave("notebooks/paper/figures/depth_proportion.png")
+
 save(depth_proportion, file="notebooks/paper/figures/depth_proportion")
+
+ggplot(NULL, aes(x=logarea)) + geom_histogram()
