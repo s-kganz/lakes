@@ -69,6 +69,8 @@ Comparison of existing lake depth models has been impeded by inconsistent source
 Random forest modeling[@breimanRandomForests2001; @wrightRangerFastImplementation2017] was used for its robustness to multicollinearity and ability to capture nonlinear relationships. Feature selection was performed with the R package `Boruta` to screen out ineffective predictors. The Boruta algorithm proceeds by generating a random forest model for a regression problem and iteratively comparing the importance of a candidate predictor with random noise[@kursaFeatureSelectionBoruta2010]. Candidate predictors that outperformed random noise were retained in the random forest model and all others were discarded.
 
 # Results
+A summary of model performance statistics is given in Table \@ref(tab:modelPerformance).
+
 # Discussion
 \newpage
 <!-- Tables -->
@@ -109,6 +111,29 @@ tibble(
 ) %>%
   knitr::kable(caption="Values of constants used to apply atmospheric correction to Landsat brightness temperature from Du et al. (2015)", align=rep("l", 7))
 ```
+
+```{r modelPerformance}
+# Taken from output on the IDEA cluster
+load("data_working/lagosus/valid_stats")
+valid_stats %>%
+  as.data.frame() %>%
+  mutate(across(-c(model), unlist)) %>%
+  mutate(model = c(
+    "Random Forest", "Oliver et al. (2016)", "Sobek (2011)", "Hollister et al. (2011)", "Heathcote et al. (2015)"
+  )) %>%
+  rename(
+    "Model"=model,
+    "RMSE (m)"=rmse,
+    "MAE (m)"=mae,
+    "MAPE (%)"=mape,
+    "$R^2$"=r2
+  ) %>%
+  knitr::kable(
+    caption="Model validation statistics for the random forest model introduced in this study and selected prior models trained on the LAGOS US DEPTH module. RMSE: root mean square error; MAE: mean absolute error; MAPE: mean absolute percent error; $R^2$: proportion of variance explained.",
+    digits=3
+  )
+```
+
 \newpage
 <!-- Equations -->
 \begin{equation}
