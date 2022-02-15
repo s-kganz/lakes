@@ -4,8 +4,10 @@ import pprint
 import os
 ee.Initialize()
 
+from util import get_asset_list, run_export_tasks
+
 SCALE = 30  # m
-srtm = ee.Image("USGS/SRTMGL1_003").resample("bilinear")
+fabdem = ee.ImageCollection("projects/sat-io/open-datasets/FABDEM")
 
 # terrain ruggedness index
 # for each cell = consider the 8-neighborhood and return the mean square
@@ -69,13 +71,14 @@ superReducer = ee.Reducer.median().combine(
 )
 
 # factory function for making reduceRegion calls
-
-
-def doReduceRegion(image, collection, fun, kernel, stat):
+def doReduceRegion(imageCollection, collection, fun, kernel, stat):
     global superReducer
+    imageCollection = imageCollection.filterBounds(collection)
     if fun is None:
         # this is just an identity
-        return (image.reduceRegions(
+        return (imageCollection.map(
+                lambda image: image.resample("bilinear")
+            ).mosaic().reduceRegions(
                 collection=collection,
                 reducer=superReducer,
                 scale=SCALE
@@ -85,7 +88,9 @@ def doReduceRegion(image, collection, fun, kernel, stat):
     elif kernel is None:
         # this is a function that doesn't need a kernel
         return (
-            fun(image).reduceRegions(
+            imageCollection.map(
+                lambda image: fun(image.resample("bilinear"))
+            ).mosaic().reduceRegions(
                 collection=collection,
                 reducer=superReducer,
                 scale=SCALE
@@ -96,7 +101,10 @@ def doReduceRegion(image, collection, fun, kernel, stat):
     else:
         # this is a function that needs a kernel
         return (
-            fun(image, kernel).reduceRegions(
+            imageCollection.map(
+                lambda image: fun(image.resample("bilinear"), kernel)
+            ).mosaic()
+            .reduceRegions(
                 collection=collection,
                 reducer=superReducer,
                 scale=SCALE
@@ -117,39 +125,35 @@ def doOneExport(collection):
     # big list of reduceRegions calls
     reductions = ee.List([
         # scale-dependent functions (needs a scale)
-        doReduceRegion(srtm, collection, deviation, k50, "dev50"),
-        doReduceRegion(srtm, collection, deviation, k100, "dev100"),
-        doReduceRegion(srtm, collection, deviation, k500, "dev500"),
-        doReduceRegion(srtm, collection, deviation, k1000, "dev1000"),
-        doReduceRegion(srtm, collection, relief, k50, "relief50"),
-        doReduceRegion(srtm, collection, relief, k100, "relief100"),
-        doReduceRegion(srtm, collection, relief, k500, "relief500"),
-        doReduceRegion(srtm, collection, relief, k1000, "relief1000"),
+        doReduceRegion(fabdem, collection, deviation, k50, "dev50"),
+        doReduceRegion(fabdem, collection, deviation, k100, "dev100"),
+        doReduceRegion(fabdem, collection, deviation, k500, "dev500"),
+        doReduceRegion(fabdem, collection, deviation, k1000, "dev1000"),
+        doReduceRegion(fabdem, collection, relief, k50, "relief50"),
+        doReduceRegion(fabdem, collection, relief, k100, "relief100"),
+        doReduceRegion(fabdem, collection, relief, k500, "relief500"),
+        doReduceRegion(fabdem, collection, relief, k1000, "relief1000"),
         # scale-independent functions
-        doReduceRegion(srtm, collection, ee.Terrain.slope, None, "slope"),
-        doReduceRegion(srtm, collection, tri, None, "tri"),
+        doReduceRegion(fabdem, collection, ee.Terrain.slope, None, "slope"),
+        doReduceRegion(fabdem, collection, tri, None, "tri"),
         # identity on things that are already calculated
-        doReduceRegion(srtm, collection, None, None, "elev"),
+        doReduceRegion(fabdem, collection, None, None, "elev"),
     ])
     return ee.FeatureCollection(reductions).flatten()
 
 
 # collect all of the collections to be reduced over
-assets = subprocess.Popen(
-    "earthengine ls projects/lagos-lakes/assets/lagos_us_200m_strips",
-    shell=True, stdout=subprocess.PIPE
-).communicate()[0].decode("utf-8").split("\n")
-print(os.path.split(assets[1])[1])
+assets = get_asset_list("projects/lagos-lakes/assets/lagos_us_100m_strips_huc8")
 # prepare all the exports
 tasks = [
     ee.batch.Export.table.toDrive(
         doOneExport(ee.FeatureCollection(asset).select(
             ["lagoslakei", "hu8_zoneid"])),
         description=os.path.split(asset)[1],
-        folder="lagos_us_by_huc8"
+        folder="lagos_us_terrain_fabdem_100m_by_huc8"
     ) for asset in assets
 ]
 
-# send them all to the server
-for t in tasks:
-    t.start()
+# send everything to the server
+#tasks[0].start()
+run_export_tasks(tasks)
