@@ -38,6 +38,7 @@ def run_export_tasks(tasks, verbose=True):
 def is_active(task):
     return task["metadata"]["state"] in ["PENDING", "RUNNING"]
 
+
 def cancel_running_tasks():
     # Cancels all tasks that are READY or RUNNING
     tasks = ee.data.listOperations()
@@ -49,6 +50,10 @@ def cancel_running_tasks():
     print("Cancelling {} tasks...".format(len(to_cancel)))
     for t in to_cancel:
         ee.data.cancelOperation(t["name"])
+
+
+def count_running_tasks():
+    return sum(is_active(t) for t in ee.data.listOperations())
 
 # Running this file will kill all tasks
 if __name__ == "__main__":
