@@ -7,6 +7,7 @@ ee.Initialize()
 from util import get_asset_list, run_export_tasks
 
 SCALE = 30  # m
+TILESCALE = 4
 fabdem = ee.ImageCollection("projects/sat-io/open-datasets/FABDEM")
 
 # terrain ruggedness index
@@ -81,7 +82,8 @@ def doReduceRegion(imageCollection, collection, fun, kernel, stat):
             ).mosaic().reduceRegions(
                 collection=collection,
                 reducer=superReducer,
-                scale=SCALE
+                scale=SCALE,
+                tileScale=TILESCALE
                 )
                 .map(removeGeometry)
                 .map(lambda x: x.set("stat", stat)))
@@ -93,7 +95,8 @@ def doReduceRegion(imageCollection, collection, fun, kernel, stat):
             ).mosaic().reduceRegions(
                 collection=collection,
                 reducer=superReducer,
-                scale=SCALE
+                scale=SCALE,
+                tileScale=TILESCALE
             )
             .map(removeGeometry)
             .map(lambda x: x.set("stat", stat))
@@ -107,7 +110,8 @@ def doReduceRegion(imageCollection, collection, fun, kernel, stat):
             .reduceRegions(
                 collection=collection,
                 reducer=superReducer,
-                scale=SCALE
+                scale=SCALE,
+                tileScale=TILESCALE
             )
             .map(removeGeometry)
             .map(lambda x: x.set("stat", stat))
@@ -151,7 +155,10 @@ tasks = [
             ["lagoslakei", "hu8_zoneid"])),
         description=os.path.split(asset)[1],
         folder="lagos_us_terrain_fabdem_100m_by_huc8"
-    ) for asset in assets
+    ) for asset in [
+        'projects/lagos-lakes/assets/lagos_us_100m_strips_huc8/hu8_zoneid_hu8_130a',
+        'projects/lagos-lakes/assets/lagos_us_100m_strips_huc8/hu8_zoneid_hu8_130b'
+    ]
 ]
 
 # send everything to the server

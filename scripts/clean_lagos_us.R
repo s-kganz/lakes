@@ -25,36 +25,30 @@ lagos_net <- read_lake_subset(
   "data_in/lagos/LAGOS_US_LOCUS/nets_networkmetrics_medres.csv",
   lagoslakeids)
 
-lagos_ws <- read_lake_subset(
-  "data_in/lagos/LAGOS_US_LOCUS/lake_watersheds.csv",
-  lagoslakeids
-)
+lagos_ws <- read_csv("data_in/lagos/LAGOS_US_LOCUS/lake_watersheds.csv")
 
-lagos_char <- read_lake_subset(
-  "data_in/lagos/LAGOS_US_LOCUS/lake_characteristics.csv",
-  lagoslakeids
-)
+lagos_char <- read_csv("data_in/lagos/LAGOS_US_LOCUS/lake_characteristics.csv")
 
-lagos_info <- read_lake_subset(
-  "data_in/lagos/LAGOS_US_LOCUS/lake_information.csv",
-  lagoslakeids
-)
+lagos_info <- read_csv("data_in/lagos/LAGOS_US_LOCUS/lake_information.csv")
 
 # First build the geography table - Lat/lon, glaciation, NHD Unit, WS Area, 
 # Ws:Lake area ratio
-lagos_geography <- lagos_char %>% 
+
+lagos_geogrpahy <- read_csv("data_in/lagos/LAGOS_US_LOCUS/lake_characteristics.csv") %>%
   select(lagoslakeid, lake_glaciatedlatewisc, lake_connectivity_class,
          contains("upstream")) %>%
   inner_join(
-    lagos_info %>% 
+    read_csv("data_in/lagos/LAGOS_US_LOCUS/lake_information.csv") %>%
       select(lagoslakeid, lake_lat_decdeg, lake_lon_decdeg, 
              lake_huc12, lake_elevation_m),
-    by="lagoslakeid") %>%
+    by="lagoslakeid"
+  ) %>%
   inner_join(
-    lagos_ws %>%
+    read_csv("data_in/lagos/LAGOS_US_LOCUS/lake_watersheds.csv") %>%
       select(lagoslakeid, ws_area_ha, ws_lake_arearatio),
     by="lagoslakeid"
-  )
+  ) %>%
+  write_csv("data_out/lagos_us_geography.csv")
 
 # This table is kind of small unfortunately. We can't join into the above
 # tables without losing some data, so we should just hang on to everything.

@@ -3,20 +3,6 @@
 library(tidyverse)
 source("scripts/util.R")
 
-# apply the typical cleaning procedure to huc4 terrain
-terrain <- read_csv("data_in/gee/huc4_terrain.csv") %>%
-  select(huc4, max, median, min, stat) %>%
-  replace_na(list(
-    max=0, median=0, min=0
-  )) %>%
-  rename(variable=stat) %>%
-  pivot_longer(c(max, min, median), names_to="stat") %>%
-  mutate(colname = str_c(variable, "_", stat)) %>%
-  select(-variable, -stat) %>%
-  pivot_wider(names_from=colname, values_from=value)
-
-terrain %>% write_csv('data_out/huc4_terrain.csv')
-
 # Make a crosswalk table
 lagos_huc_xwalk <- read_csv("data_out/lagos_us_geography.csv") %>%
   select(lagoslakeid, lake_huc12) %>%
@@ -29,6 +15,23 @@ lagos_huc_xwalk <- read_csv("data_out/lagos_us_geography.csv") %>%
 
 lagos_huc_xwalk %>% write_csv("data_out/lagos_huc_crosswalk.csv")
 
+# Only summarize the medians in HUC4 unit so it doesn't get ridiculously complex
+huc_terrain <- read_csv("data_out/lagos_us_terrain_fabdem_100m.csv") %>%
+  select(lagoslakei, contains("_median")) %>%
+  rename_with(~str_replace(., "_median", ""), everything()) %>%
+  inner_join(
+    lagos_huc_xwalk, by=c("lagoslakei"="lagoslakeid")
+  ) %>%
+  select(huc04, slope, tri, elev) %>%
+  group_by(huc04) %>%
+  summarize(
+    across(.cols=c(slope, tri, elev),
+           .fns =list("min"=min, "max"=max, "median"=median, "sd"=sd),
+           .names="{.col}_{.fn}")
+  ) %>%
+  rename_with(~str_c("huc4_", .), -huc04) %>%
+  write_csv("data_out/lagos_us_huc_terrain_fabdem_100m.csv")
+
 # Take the mean of the shape metrics
 huc_shape <- read_csv("data_out/lagos_us_shape.csv") %>%
   inner_join(
@@ -40,9 +43,9 @@ huc_shape <- read_csv("data_out/lagos_us_shape.csv") %>%
     across(.cols=c(perimeter, area, bbox_lw, sdi, dist_pole),
            .fns =list("min"=min, "max"=max, "median"=median, "sd"=sd),
            .names="{.col}_{.fn}")
-  )
-
-huc_shape %>% write_csv("data_out/lagos_us_huc_shape.csv")
+  ) %>%
+  rename_with(~str_c("huc4_", .), -huc04) %>%
+  write_csv("data_out/lagos_us_huc_shape.csv")
 
 # Min, max, mean lake depth
 huc_depth <- read_csv("data_in/lagos/LAGOS_US_LOCUS/lake_depth.csv") %>%
@@ -51,9 +54,10 @@ huc_depth <- read_csv("data_in/lagos/LAGOS_US_LOCUS/lake_depth.csv") %>%
   group_by(huc04) %>%
   summarize(min_depth = min(lake_maxdepth_m),
             max_depth = max(lake_maxdepth_m),
-            median_depth= median(lake_maxdepth_m))
-
-huc_depth %>% write_csv("data_out/huc_depth.csv")
+            median_depth= median(lake_maxdepth_m),
+            sd_depth = sd(lake_maxdepth_m)) %>%
+  rename_with(~str_c("huc4_", .), -huc04) %>%
+  write_csv("data_out/huc_depth.csv")
 
 # Min, max, mean relative depth
 # RD = (depth * sqrt(pi)) / (20 * sqrt(area))
@@ -65,6 +69,9 @@ huc_rd <- huc_depth <- read_csv("data_in/lagos/LAGOS_US_LOCUS/lake_depth.csv") %
   group_by(huc04) %>%
   summarize(min_rd  = min(rd),
             max_rd  = max(rd),
-            median_rd = median(rd))
+            median_rd = median(rd),
+            sd_rd = sd(rd)) %>%
+  rename_with(~str_c("huc4_", .), -huc04) %>%
+  write_csv("data_out/huc_rd.csv")
 
 huc_rd %>% write_csv("data_out/huc_rd.csv")

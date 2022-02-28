@@ -119,5 +119,9 @@ def monthly_wst_anomaly(asset, month):
         )
 
 assets = get_asset_list("projects/lagos-lakes/assets/lagos_us_points_huc8")
-tasks = [monthly_wst_anomaly(a, 5) for a in assets]
+tasks = [
+  monthly_wst_anomaly("projects/lagos-lakes/assets/lagos_us_points_huc8/hu8_zoneid_hu8_331", 4),
+  monthly_wst_anomaly("projects/lagos-lakes/assets/lagos_us_points_huc8/hu8_zoneid_hu8_1086", 1),
+  monthly_wst_anomaly("projects/lagos-lakes/assets/lagos_us_points_huc8/hu8_zoneid_hu8_1097", 5)
+]
 run_export_tasks(tasks)

@@ -12,21 +12,21 @@ ID_COL <- "lagoslakei"
 #gee_terrain <- read_csv("data_in/gee/lagos_ne_terrain_metrics.csv") %>%
 
 # Otherwise, use vroom to concat many files together
-files <- list.files("data_in/gee/lagos_us_fall_temp_by_huc8/", "*.csv",
+files <- list.files("data_in/gee/lagos_us_terrain_fabdem_100m_by_huc8/", "*.csv",
                     include.dirs=T, full.names=T)
 
 gee_terrain <- vroom(files)
 
+# get curvature as well
+files <- list.files("data_in/gee/lagos_us_curvature_fabdem_100m_strips_by_huc8/", "*.csv",
+                    include.dirs=T, full.names=T)
+
+gee_curvature <- vroom(files)
+
 # If the files do not all have the same columns
-gee_temp    <- map_df(files, ~vroom(.x, progress=FALSE, show_col_types=FALSE))
+# gee_temp    <- map_df(files, ~vroom(.x, progress=FALSE, show_col_types=FALSE))
 
-gee_temp %>%
-  select(lagoslakei, first) %>%
-  rename(lagoslakeid=lagoslakei,
-         fall_temp_anomaly_k=first) %>%
-  write_csv("data_working/lagosus/fall_temp_anomaly.csv")
-
-cleaned <- gee_terrain %>%
+terrain_cleaned <- gee_terrain %>%
   select(-c(`system:index`, .geo, hu8_zoneid)) %>%
   rename(metric=stat) %>%
   pivot_longer(c(min, max, median, stdDev), names_to="stat") %>%
@@ -40,5 +40,12 @@ cleaned <- gee_terrain %>%
   # throw out the one NA row at the bottom
   filter(!is.na(ID_COL))
 
-cleaned %>%
-  write_csv("data_out/lagos_us_terrain.csv")
+gee_join <- terrain_cleaned %>%
+  inner_join(
+    gee_curvature %>%
+      select(-contains("Slope"), -`system:index`, -hu8_zoneid, -.geo),
+    by="lagoslakei"
+    )
+
+gee_join %>%
+  write_csv("data_out/lagos_us_terrain_fabdem_100m.csv")

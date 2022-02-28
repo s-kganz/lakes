@@ -30,7 +30,8 @@ def doOneExport(asset):
     return terrainMetrics.reduceRegions(
         asset,
         superReducer,
-        scale=SCALE
+        scale=SCALE,
+        tileScale=4
     ).map(lambda f: f.setGeometry(None))
 
 # collect all of the collections to be reduced over
@@ -41,7 +42,7 @@ tasks = [
             ["lagoslakei", "hu8_zoneid"])),
         description=os.path.split(asset)[1],
         folder="lagos_us_curvature_fabdem_100m_strips_by_huc8"
-    ) for asset in assets
+    ) for asset in ["projects/lagos-lakes/assets/lagos_us_100m_strips_huc8/hu8_zoneid_hu8_1973"]
 ]
 
 # send everything to the server
