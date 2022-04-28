@@ -1,5 +1,9 @@
 data_in/
 data_working/
+notebooks/paper/
+notebooks/poster/
+presentations/
+*/.ipynb_checkpoints/
 .Rhistory
 *.docx
 parameter_list
@@ -12,3 +16,5 @@ __pycache__/
 *.tex
 *.qgz
 *.png
+*.pptx
+
