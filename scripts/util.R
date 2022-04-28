@@ -53,7 +53,6 @@ fui.hue <- function(R, G, B) {
   # Classification of Inland Water With the Forel-Ule
   # Scale: A Case Study of Lake Taihu
   
-  require(colorscience)
   # chromaticity.diagram.color.fill()
   Xi <- 2.7689*R + 1.7517*G + 1.1302*B
   Yi <- 1.0000*R + 4.5907*G + 0.0601*B
@@ -74,8 +73,12 @@ fui.hue <- function(R, G, B) {
     dplyr::filter(wlnm >=380)
   
   # find nearest dominant wavelength to hue angle
-  wl <- cie[as.vector(sapply(alpha,function(x) which.min(abs(x -
-                                                               cie$a)))), 'wlnm']
+  wl <- cie$wlnm[
+    map_dbl(alpha,function(x){
+      if (is.na(x)) { return(NA) }
+      which.min(abs(x - cie$a))
+    })
+  ]
   
   #out <- cbind(as.data.frame(alpha), as.data.frame(wl))
   
