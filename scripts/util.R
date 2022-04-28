@@ -22,8 +22,7 @@ dynamic_join <- function(x, y, xjoin="lake_huc04", yjoin="huc4") {
   # y: path
   inner_join(
     x,
-    read_csv(y) %>%
-      rename_at(vars(-!!yjoin), ~paste0("huc4_", .x)),
+    read_csv(y),
     by=setNames(yjoin, xjoin)
   )
 }

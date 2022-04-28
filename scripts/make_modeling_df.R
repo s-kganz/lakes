@@ -6,7 +6,7 @@ join_column <- "lagoslakeid"
 obs_df <- read_csv("data_out/lagos_us_shape.csv") %>%
   rename(lagoslakeid=lagoslakei) %>%
   inner_join(
-    read_csv("data_out/lagos_us_terrain.csv") %>%
+    read_csv("data_out/lagos_us_terrain_fabdem_100m.csv") %>%
       rename(lagoslakeid=lagoslakei),
     by=join_column
   ) %>%
@@ -19,16 +19,13 @@ obs_df <- read_csv("data_out/lagos_us_shape.csv") %>%
   ) %>%
   # Swap this out with your depth dataset of choice
   inner_join(
-    read_csv("data_in/lagos/LAGOS_US_LOCUS/lake_depth.csv") %>%
-      select(lagoslakeid, lake_maxdepth_m) %>%
-      rename(maxdepth=lake_maxdepth_m),
+    read_csv("data_out/lagos_us_temperature.csv"),
     by=join_column
   ) %>%
-  select(
-    -contains("lagoslakei"), -contains("dam"), -OBJECTID 
-    #-nhdplusv2_comid,
-    #-lake_nets_upstreamlake_km, -lake_nets_downstreamlake_km,
-    #net_dams_n, lake_nets_damonlake_flag
+  inner_join(
+    read_csv("data_out/lagos_us_reflectance.csv") %>%
+      rename(lagoslakeid=lagoslakei),
+    by=join_column
   ) %>%
   mutate(
     lake_huc12_pad = map_chr(lake_huc12, parse_huc),
@@ -36,17 +33,30 @@ obs_df <- read_csv("data_out/lagos_us_shape.csv") %>%
     lake_huc04 = str_sub(lake_huc12_pad, 1, 4),
     lake_huc06 = str_sub(lake_huc12_pad, 1, 6),
     #net_id = factor(net_id)
-  ) %>% drop_na() %>% select(-lake_huc12_pad)
-
-# join regional stats by huc04 code
-model_df <- obs_df %>%
-  dynamic_join("data_out/huc4_terrain.csv") %>%
+  ) %>%
+  # join regional stats by huc04 code
+  dynamic_join("data_out/lagos_us_huc_terrain_fabdem_100m.csv", yjoin="huc04") %>%
   dynamic_join("data_out/huc_depth.csv", yjoin="huc04") %>%
   dynamic_join("data_out/huc_rd.csv", yjoin="huc04") %>%
-  dynamic_join("data_out/lagos_us_huc_shape.csv", yjoin="huc04")
+  dynamic_join("data_out/lagos_us_huc_shape.csv", yjoin="huc04") %>%
+  select(
+    -lake_huc12_pad, -contains("dam"), -OBJECTID
+  ) %>%
+  # add in linear and quad terms from the cone model
+  mutate(
+    linear_term = dist_pole * slope_median,
+    quad_term   = dist_pole^2 * VerticalCurvature_max
+  )
 
-# add in the linear and quad terms bc they seem important
-model_df$linear_term <- model_df$dist_pole   * model_df$slope_median
-model_df$quad_term   <- model_df$dist_pole^2 * model_df$vcurv_max
+model_df <- obs_df %>% inner_join(
+  # add in the depth data
+  read_csv("data_in/lagos/LAGOS_US_LOCUS/lake_depth.csv") %>%
+    select(lagoslakeid, lake_maxdepth_m) %>%
+    rename(maxdepth=lake_maxdepth_m),
+  by=join_column
+) %>%
+  # apply constraints on area and maxdepth
+  filter(area < 1e7, maxdepth > 0.5) %>%
+  write_csv("data_out/model_results/maxdepth/maxdepth_modeling_df.csv")
 
-write_csv(model_df, "data_working/lagosus/lagos_us_model_df.csv")
+obs_df %>% write_csv("data_out/model_results/maxdepth/maxdepth_prediction_df.csv")
