@@ -9,6 +9,7 @@ presentations/
 parameter_list
 presentation
 data_out/lagos*.csv
+data_out/model_results/*
 __pycache__/
 *.nb.html
 *.pdf
