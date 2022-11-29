@@ -17,7 +17,6 @@ obs_df <- read_csv("data_out/lagos_us_shape.csv") %>%
     #rename(lagoslakei = lagoslakeid),
     by=join_column
   ) %>%
-  # Swap this out with your depth dataset of choice
   inner_join(
     read_csv("data_out/lagos_us_polygon_temperature.csv"),
     by=c("lagoslakeid"="polygon_lagoslakeid")
@@ -53,7 +52,9 @@ obs_df <- read_csv("data_out/lagos_us_shape.csv") %>%
     logarea = log10(area),
     # heathcote
     log_elev_change = log(pmax(elev_median - elev_min, 0.01))
-  )
+  ) %>%
+  # drop duplicate columns
+  select(-contains("Elevation", ignore.case=F))
 
 # add the messager volume and mean depth estimates
 messager_coeffs <- read_csv("data_working/messager_volume_coefficients.csv")
@@ -94,9 +95,11 @@ model_df <- obs_df %>% inner_join(
   ) %>%
   # apply constraint on area
   filter(area < 1e7) %>%
-  write_csv("data_out/model_results/meandepth/meandepth_modeling_df.csv")
+  # discard NA mean depths
+  filter(!is.na(meandepth)) #%>%
+  #write_csv("data_out/model_results/meandepth/meandepth_modeling_df.csv")
 
 obs_df %>%
   mutate(oliver_model_group = ifelse(lake_huc04 %in% model_df$oliver_model_group,
-                                     lake_huc04, "default")) %>%
-  write_csv("data_out/model_results/meandepth/meandepth_prediction_df.csv")
+                                     lake_huc04, "default")) #%>%
+  #write_csv("data_out/model_results/meandepth/meandepth_prediction_df.csv")

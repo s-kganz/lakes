@@ -17,7 +17,6 @@ obs_df <- read_csv("data_out/lagos_us_shape.csv") %>%
     #rename(lagoslakei = lagoslakeid),
     by=join_column
   ) %>%
-  # Swap this out with your depth dataset of choice
   inner_join(
     read_csv("data_out/lagos_us_temperature.csv"),
     by=join_column
@@ -53,7 +52,9 @@ obs_df <- read_csv("data_out/lagos_us_shape.csv") %>%
     logarea = log10(area),
     # heathcote
     log_elev_change = log(pmax(elev_median - elev_min, 0.01))
-  )
+  ) %>%
+  # drop duplicate columns
+  select(-contains("Elevation", ignore.case=F))
 
 # add the messager volume and mean depth estimates
 messager_coeffs <- read_csv("data_working/messager_volume_coefficients.csv")
