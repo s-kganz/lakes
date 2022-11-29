@@ -57,7 +57,7 @@ obs_df <- read_csv("data_out/lagos_us_shape.csv") %>%
   select(-contains("Elevation", ignore.case=F))
 
 # add the messager volume and mean depth estimates
-messager_coeffs <- read_csv("data_working/messager_volume_coefficients.csv")
+messager_coeffs <- read_csv("data_out/messager_volume_coefficients.csv")
 obs_df <- obs_df %>%
   mutate(logarea_km2 = log10(area/1e6),
          size_class = ifelse(logarea_km2 < 1, 1,
