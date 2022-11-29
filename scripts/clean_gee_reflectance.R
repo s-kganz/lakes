@@ -17,7 +17,8 @@ gee_reflectance %>%
   mutate(across(contains("B"), log)) %>%
   # compute all possible band ratios
   mutate(pairwise(contains("B"),
-                  list(ratio="/"))) %>%
+                  list(ratio="/"),
+                  .is_commutative=TRUE)) %>%
   select(-B1, -B2, -B3, -B4, -B5) %>%
   rename_with(~str_c("polygon_", .), everything()) %>%
   write_csv("data_out/lagos_us_polygon_reflectance.csv")
