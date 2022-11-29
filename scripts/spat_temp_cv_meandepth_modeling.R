@@ -13,16 +13,21 @@ library(paradox)
 DO_BORUTA     <- TRUE
 FIT_LMS       <- TRUE
 FIT_RFS       <- TRUE
-DO_PREDICTION <- TRUE
-
+SAVE_VAR_IMP  <- TRUE
+# any modification to the above should trigger new predictions
+DO_PREDICTION <- DO_BORUTA | FIT_LMS | FIT_RFS
 # Read in the modeling dataframe. To save on memory, we won't load the prediction
 # dataframe until modeling is done.
+
 model_df <- read_csv("data_out/model_results/meandepth/meandepth_modeling_df.csv") %>%
   drop_na()
 
 # feature selection via the boruta algorithm
 if (DO_BORUTA) {
+  set.seed(11272022)
   boruta <- Boruta(
+    # These variables are excluded because they are duplicates of other
+    # variables, used in other models, or are just not reasonable to include.
     meandepth ~ . - lagoslakeid - logarea - log_elev_change - oliver_model_group,
     data=model_df
   )
@@ -40,7 +45,8 @@ boruta_importance <- boruta$ImpHistory %>%
   dplyr::summarize(median_inc_rmse = median(value, na.rm=T),
             sd_inc_rmse = sd(value, na.rm=T),
             n = n()) %>%
-  arrange(desc(median_inc_rmse))
+  arrange(desc(median_inc_rmse)) %>%
+  filter(name %in% names(boruta$finalDecision[boruta$finalDecision == "Confirmed"]))
 
 important_vars <- boruta_importance %>%
   filter(median_inc_rmse >= quantile(median_inc_rmse, 0.8)) %>% pull(name)
@@ -67,50 +73,78 @@ for (variable in important_vars) {
   }
 }
 
+if (SAVE_VAR_IMP) {
+  # Save out the variable importance metrics for tables and the EDI repo
+  boruta_importance_df <- data.frame(varname = colnames(boruta$ImpHistory)) %>%
+    mutate(avg_incRMSE = apply(boruta$ImpHistory, 2, mean),
+           sd_incRMSE  = apply(boruta$ImpHistory, 2, sd)) %>%
+    filter(!str_detect(varname, "shadow"))
+  
+  var_imp_results <- data.frame(varname = names(model_df)) %>%
+    mutate(
+      pass_boruta = varname %in% 
+        names(boruta$finalDecision[boruta$finalDecision == "Confirmed"]),
+      pass_importance = varname %in% important_vars,
+      pass_correlation = varname %in% in_model_vars
+    ) %>%
+    left_join(boruta_importance_df, by='varname')
+  
+  write_csv(var_imp_results, 
+            "data_out/model_results/meandepth/meandepth_var_importance.csv")
+}
+
 # After 12.5 in Geocomputation with R, we use spatial CV to get a performance
 # estimate and then train the final model on all data.
 
 # Define the prediction task
-st_args <- list(
-  crs="EPSG:4326",
-  coordinate_names=c("lake_lat_decdeg", "lake_lon_decdeg")
-)
-
 task_meandepth <- TaskRegrST$new(
   "meandepth",
   model_df,
   "meandepth",
-  extra_args=st_args
+  crs="EPSG:4326",
+  coordinate_names=c("lake_lat_decdeg", "lake_lon_decdeg")
 )
 task_meandepth$col_roles$stratum <- "oliver_model_group"
 
 # Messager is just a dummy model to regress on the zmean estimate they provide
-lrn_messager <- po("select", selector=selector_name("messager_zmean")) %>>%
+lrn_messager <- po(
+    "select", 
+    selector=selector_name("messager_zmean", assert_present=TRUE)
+  ) %>>%
   po("learner", learner=lrn("regr.lm")) %>%
   GraphLearner$new(id="messager")
 
 # Khazaei
-lrn_khazaei <- po("select", selector=selector_name(
-  c("meandepth", "perimeter", "area", "messager_volume", 
-    "lake_elevation_m", "ws_area_ha"))) %>>%
+lrn_khazaei <- po(
+    "select", 
+    selector=selector_name(
+      c("perimeter", "area", "messager_volume", 
+        "lake_elevation_m", "ws_area_ha"),
+      assert_present=TRUE
+    )
+  ) %>>%
   po("learner", learner=lrn("regr.ranger")) %>%
   GraphLearner$new(id="khazaei")
 
 # Lastly, our RF model
-lrn_rf <- po("select", selector=selector_name(in_model_vars)) %>>%
+lrn_rf <- po(
+    "select", 
+    selector=selector_name(in_model_vars, assert_present=TRUE)
+  ) %>>%
   po("learner", learner=lrn("regr.ranger")) %>%
   GraphLearner$new(id="rf")
 
 # We now have all the learners defined, so we can benchmark all of them
 # simultaneously to get performance estimates. We now define training
 # behaviors.
-rsmp_spcv <- rsmp("repeated_spcv_coords", folds=5, repeats=10)
+rsmp_spcv <- rsmp("repeated_spcv_coords", folds=8, repeats=8)
 
 # Model performance metrics
 msr_meandepth <- c(msr("regr.rmse"), msr("regr.rsq"), 
                    msr("regr.mae"), msr("regr.pbias"))
 
 if (FIT_LMS) {
+  set.seed(11272022)
   # None of the linear models have hyperparameter tuning, so we can use
   # spatial CV with no inner resampling to derive performance estimates
   design_lm <- data.table::data.table(
@@ -144,6 +178,7 @@ if (FIT_LMS) {
 
 
 if (FIT_RFS) {
+  set.seed(11272022)
   # The RFs have hyperparameters, so to derive performance estimates for a model
   # fit on all the data, we have to use two resampling loops. The outer loop ensures
   # unbiased performance metrics, while the inner loop ensures unbiased hyperparameter
@@ -161,9 +196,9 @@ if (FIT_RFS) {
     regr.ranger.min.node.size = paradox::p_int(lower = 1, upper = 10)
   )
   
-  # Random tuner with 10 iterations - this is verrrrry slow
+  # Random tuner - this is verrrrry slow
   tuner <- tnr("random_search")
-  terminator <- trm("evals", n_evals=10)
+  terminator <- trm("evals", n_evals=4)
   measure <- msr("regr.rmse")
   inner_resampling <- rsmp("repeated_spcv_coords", folds=4)
   outer_resampling <- rsmp("repeated_spcv_coords", folds=4)
