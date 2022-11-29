@@ -9,7 +9,7 @@ zmax   <- read_csv("data_out/model_results/maxdepth/maxdepth_prediction_results.
 zmean  <- read_csv("data_out/model_results/meandepth/meandepth_prediction_results.csv")
 
 model_comp <- zmax %>%
-  select(lagoslakeid, in_training, area, contains("prediction")) %>%
+  select(lagoslakeid, in_training, contains("prediction")) %>%
   rename_with(~ str_c("maxdepth_", .x), .cols=contains("prediction")) %>%
   rename(in_maxdepth_training=in_training) %>%
   inner_join(
@@ -19,15 +19,21 @@ model_comp <- zmax %>%
       rename(in_meandepth_training=in_training),
     by="lagoslakeid"
   ) %>%
-  left_join(
+  full_join(
     depths %>% select(lagoslakeid, lake_meandepth_m, lake_maxdepth_m),
     by="lagoslakeid"
+  ) %>%
+  # add in area
+  left_join(
+    read_csv("data_out/lagos_us_shape.csv") %>% select(lagoslakei, area),
+    by=c("lagoslakeid"="lagoslakei")
   ) %>%
   # pick out the best max/mean depth depending on if an observed one is available
   mutate(
     best_maxdepth  = ifelse(is.na(lake_maxdepth_m), maxdepth_prediction_rf,
                             lake_maxdepth_m),
     best_meandepth = ifelse(is.na(lake_meandepth_m), meandepth_prediction_rf,
-                            lake_meandepth_m)
+                            lake_meandepth_m),
+    cone_volume = best_maxdepth * area / 3
   ) %>%
   write_csv("data_out/model_results/compiled_predictions.csv")
