@@ -8,7 +8,7 @@ presentations/
 *.docx
 parameter_list
 presentation
-data_out/model_results/*.csv
+data_out/*.csv
 __pycache__/
 *.nb.html
 *.pdf
