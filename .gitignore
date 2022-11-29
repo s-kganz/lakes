@@ -8,7 +8,8 @@ presentations/
 *.docx
 parameter_list
 presentation
-data_out/*.csv
+data_out/**/*.csv
+
 __pycache__/
 *.nb.html
 *.pdf
@@ -17,4 +18,8 @@ __pycache__/
 *.qgz
 *.png
 *.pptx
+*.shp
+*.prj
+*.dbf
+*.shx
 
