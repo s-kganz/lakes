@@ -1,0 +1,2 @@
+nr,task_id,learner_id,resampling_id,iters,regr.rmse,regr.rsq,regr.mae,regr.pbias
+1,meandepth,messager,repeated_spcv_coords,64,3.1372108731964388,0.1527147910898547,2.0644495150093043,-0.4451197909284836
