@@ -14,11 +14,11 @@ meandepth_boruta <- boruta
 
 pareto_fits <- read_csv("data_out/model_results/pareto_fits.csv")
 
-wst <- read_csv("data_working/lagosus/lagos_us_2k_wst_counts.csv") %>%
+wst <- read_csv("data_out/lagos_us_2k_wst_counts.csv") %>%
   select(lagoslakei, first) %>%
   rename(wst_count = first)
 
-ref <- read_csv("data_working/lagosus/lagos_us_2k_reflectance_counts.csv") %>%
+ref <- read_csv("data_out/lagos_us_2k_reflectance_counts.csv") %>%
   select(lagoslakei, first) %>%
   rename(ref_count = first)
 
