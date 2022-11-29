@@ -8,8 +8,7 @@ presentations/
 *.docx
 parameter_list
 presentation
-data_out/lagos*.csv
-data_out/model_results/*
+data_out/model_results/*.csv
 __pycache__/
 *.nb.html
 *.pdf
