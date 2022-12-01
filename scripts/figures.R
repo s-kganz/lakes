@@ -205,16 +205,16 @@ maxdepth_boruta$ImpHistory %>%
   filter(!is.infinite(value)) %>%
   group_by(name) %>%
   dplyr::summarize(mean_inc_rmse = mean(value, na.rm=T),
-            sd_inc_rmse   = sd(value, na.rm=T),
-            n = n()) %>%
+                   sd_inc_rmse   = sd(value, na.rm=T),
+                   n = n()) %>%
   arrange(desc(mean_inc_rmse)) %>%
   head(20) %>%
   rename(variable=name) %>%
   mutate(
-    # max depth model
-    category = strsplit("tttrphrhlllplrrttocr", "")[[1]],
     # mean depth model
     # category = strsplit("tltltpllphcthtkoptkk", "")[[1]],
+    # max depth model
+    category = strsplit("tttrphrhlllplrrttocr", "")[[1]],
     category = recode(category,
                       l="Local terrain metric",
                       c="Curvature terrain metric",
@@ -276,9 +276,8 @@ maxdepth_boruta$ImpHistory %>%
                     dev500_median="Median 500m terrain deviation",
                     dev100_median="Median 100m terrain deviation",
                     dev50_median="Median 50m terrain deviation"
-    ) 
+    )
   ) %>%
-  head(20) %>%
   ggplot(aes(x=reorder(variable, mean_inc_rmse), y=mean_inc_rmse,
              color=category)) + 
   geom_point() +
@@ -291,8 +290,20 @@ maxdepth_boruta$ImpHistory %>%
        x="",
        color="") +
   paper_theme + 
-  theme(legend.text=element_text(size=10))
-#ggsave("notebooks/paper/figures/var_maxdepth_importance.png", dpi=600, width=6, height=3)
+  theme(legend.text=element_text(size=10)) +
+  scale_color_discrete(
+    limits=c(
+      "Local terrain metric",
+      "Curvature terrain metric",
+      "Kernel terrain metric",
+      "Polygon attribute",
+      "Surface temperature",
+      "Surface reflectance",
+      "HUC4 statistic",
+      "Other"
+    )
+  )
+ggsave("notebooks/paper/figures/var_maxdepth_importance.png", dpi=600, width=6, height=3)
 
 # From area 1e4 to 1e9, what % of lakes larger than the cutoff have depth measurements?
 cutoffs <- seq(4, 9, by=0.5)
