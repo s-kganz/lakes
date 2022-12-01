@@ -6,6 +6,7 @@ library(foreach)
 # bootstrapped for consistency with Cael and Seekell (2017), but the Pareto
 # model is just fit once.
 
+set.seed(12012022) # for consistent resamples
 n_trials <- 1e3
 
 df <- read_csv("data_out/model_results/compiled_predictions.csv") %>%
@@ -46,7 +47,7 @@ df_zmax_mod <- df_zmax_mod %>%
   inner_join(area_sample_weights, by="areaclass")
 
 # register the parallel backend
-cl <- makePSOCKcluster(8)
+cl <- makePSOCKcluster(4)
 registerDoParallel(cl)
 
 df_all_slopes <- foreach(i=1:n_trials, .combine=rbind,
@@ -62,14 +63,33 @@ df_all_slopes <- foreach(i=1:n_trials, .combine=rbind,
   lm_zmax_all <- lm(log(best_maxdepth) ~ log(area), data=df_zmax_all_sample)
   lm_zmax_mod <- lm(log(best_maxdepth) ~ log(area), data=df_zmax_mod_sample)
   
-  # collect the coefficients as output
+  # Do all the other models too as comparison
+  lm_zmax_hollister <- lm(log(maxdepth_prediction_hollister) ~ log(area),
+                          data=df_zmax_mod_sample)
+  lm_zmax_sobek     <- lm(log(maxdepth_prediction_sobek) ~ log(area),
+                          data=df_zmax_mod_sample)
+  lm_zmax_oliver    <- lm(log(maxdepth_prediction_oliver) ~ log(area),
+                          data=df_zmax_mod_sample)
+  lm_zmax_khazaei   <- lm(log(maxdepth_prediction_khazaei) ~ log(area),
+                          data=df_zmax_mod_sample)
+  lm_zmax_heathcote <- lm(log(maxdepth_prediction_heathcote) ~ log(area),
+                          data=df_zmax_mod_sample)
+  
+  # Collect the coefficients as output.
+  # We don't really care about the intercept, but 2x the slope gives us the
+  # Hurst exponent.
   list(
    zmax_obs_slope =lm_zmax_obs$coefficients[2],
    zmax_obs_int   =lm_zmax_obs$coefficients[1],
    zmax_all_slope =lm_zmax_all$coefficients[2],
    zmax_all_int   =lm_zmax_all$coefficients[1],
    zmax_mod_slope =lm_zmax_mod$coefficients[2],
-   zmax_mod_int   =lm_zmax_mod$coefficients[1]
+   zmax_mod_int   =lm_zmax_mod$coefficients[1],
+   zmax_hollister_slope = lm_zmax_hollister$coefficients[2],
+   zmax_heathcote_slope = lm_zmax_heathcote$coefficients[2],
+   zmax_sobek_slope = lm_zmax_sobek$coefficients[2],
+   zmax_oliver_slope = lm_zmax_oliver$coefficients[2],
+   zmax_khazaei_slope = lm_zmax_khazaei$coefficients[2]
   )
 } %>% as.data.frame() 
 
@@ -80,12 +100,15 @@ stopCluster(cl)
 df_all_slopes %>%
   # convert slope to hurst exponent
   mutate(across(contains("slope"), ~.x * 2)) %>%
+  # rename to the exponent for clarity
+  rename_with(function(x) str_replace(x, "slope", "hurst"),
+              contains("slope")) %>%
   pivot_longer(everything()) %>%
   ungroup() %>%
   group_by(name) %>%
-  summarize(hurst_median = median(value),
-            hurst_lowci  = quantile(value, probs=0.05),
-            hurst_highci = quantile(value, probs=0.95)) %>%
+  summarize(median = median(value),
+            low_95ci  = quantile(value, probs=0.05),
+            high_95ci = quantile(value, probs=0.95)) %>%
   write_csv("data_out/model_results/hurst_coefficients.csv")
 
 # Now do the Pareto regressions on area, volume, and depth.
