@@ -102,9 +102,9 @@ density_df %>%
     labels = unname(
       TeX(
         c(
-          "10$^4$ m$^2$",
-          "10$^5$ m$^2$",
-          "10$^6$ m$^2$"
+          "10$^4$ - 10$^5$ m$^2$",
+          "10$^5$ - 10$^6$ m$^2$",
+          "10$^6$ - 10$^7$ m$^2$"
         )
       )
     )
@@ -198,7 +198,7 @@ obs_df %>%
 # 
 # anim_save("temp_anomaly.gif", p)
 
-maxdepth_boruta$ImpHistory %>%
+maxdepth_varimp <- maxdepth_boruta$ImpHistory %>%
   as_tibble() %>%
   pivot_longer(everything()) %>%
   # get rid of Infs - these appear when Boruta rejects a variable
@@ -211,10 +211,30 @@ maxdepth_boruta$ImpHistory %>%
   head(20) %>%
   rename(variable=name) %>%
   mutate(
-    # mean depth model
-    # category = strsplit("tltltpllphcthtkoptkk", "")[[1]],
-    # max depth model
     category = strsplit("tttrphrhlllplrrttocr", "")[[1]],
+    model="Maximum depth model"
+  )
+
+meandepth_varimp <- meandepth_boruta$ImpHistory %>%
+  as_tibble() %>%
+  pivot_longer(everything()) %>%
+  # get rid of Infs - these appear when Boruta rejects a variable
+  filter(!is.infinite(value)) %>%
+  group_by(name) %>%
+  dplyr::summarize(mean_inc_rmse = mean(value, na.rm=T),
+                   sd_inc_rmse   = sd(value, na.rm=T),
+                   n = n()) %>%
+  arrange(desc(mean_inc_rmse)) %>%
+  head(20) %>%
+  rename(variable=name) %>%
+  mutate(
+    category = strsplit("tltltpllphcthtkoptkk", "")[[1]],
+    model="Mean depth model"
+  )
+
+rbind(meandepth_varimp, maxdepth_varimp) %>%
+  arrange(desc(mean_inc_rmse)) %>%
+  mutate(
     category = recode(category,
                       l="Local terrain metric",
                       c="Curvature terrain metric",
@@ -266,31 +286,31 @@ maxdepth_boruta$ImpHistory %>%
                     t_anomaly_month_6="June temperature",
                     B1_B3_ratio="B1:B3 reflectance ratio",
                     ws_lake_arearatio="Watershed to lake area ratio",
-                    polygon_t_anomaly_month_11="November polygon temperature",
-                    polygon_t_anomaly_month_10="October polygon temperature",
-                    polygon_t_anomaly_month_5="May polygon temperature",
-                    polygon_t_anomaly_month_6="June polygon temperature",
-                    polygon_t_anomaly_month_4="April polygon temperature",
-                    polygon_t_anomaly_month_12="December polygon temperature",
-                    polygon_t_anomaly_month_3="February polygon temperature",
+                    polygon_t_anomaly_month_11="November temperature",
+                    polygon_t_anomaly_month_10="October temperature",
+                    polygon_t_anomaly_month_5="May temperature",
+                    polygon_t_anomaly_month_6="June temperature",
+                    polygon_t_anomaly_month_4="April temperature",
+                    polygon_t_anomaly_month_12="December temperature",
+                    polygon_t_anomaly_month_3="February temperature",
                     dev500_median="Median 500m terrain deviation",
                     dev100_median="Median 100m terrain deviation",
                     dev50_median="Median 50m terrain deviation"
     )
   ) %>%
-  ggplot(aes(x=reorder(variable, mean_inc_rmse), y=mean_inc_rmse,
+  ggplot(aes(y=reorder(variable, mean_inc_rmse), x=mean_inc_rmse,
              color=category)) + 
   geom_point() +
   geom_errorbar(aes(
-    ymin=mean_inc_rmse-sd_inc_rmse*1.68,
-    ymax=mean_inc_rmse+sd_inc_rmse*1.68
+    xmin=mean_inc_rmse-sd_inc_rmse*1.68,
+    xmax=mean_inc_rmse+sd_inc_rmse*1.68
   )) +
-  coord_flip() + 
-  labs(y="Increase RMSE (m)",
-       x="",
+  facet_wrap(~ model, scales="free") +
+  labs(x="Increase RMSE (m)",
+       y="",
        color="") +
   paper_theme + 
-  theme(legend.text=element_text(size=10)) +
+  theme(legend.text=element_text(size=10), legend.position="bottom") +
   scale_color_discrete(
     limits=c(
       "Local terrain metric",
@@ -303,7 +323,7 @@ maxdepth_boruta$ImpHistory %>%
       "Other"
     )
   )
-ggsave("notebooks/paper/figures/var_maxdepth_importance.png", dpi=600, width=6, height=3)
+ggsave("notebooks/paper/figures/var_importance_merged.png", dpi=600, width=9, height=4)
 
 # From area 1e4 to 1e9, what % of lakes larger than the cutoff have depth measurements?
 cutoffs <- seq(4, 9, by=0.5)
@@ -372,13 +392,35 @@ tot_volume_1m  <- sum(map2_dbl(obs_df$best_maxdepth, obs_df$area,
 tot_volume_10m <- sum(map2_dbl(obs_df$best_maxdepth, obs_df$area,
                                calc_volume_section, d1=0, d2=10)) * 1e-9
 
+tot_volume_km3_meandepth <- sum(obs_df$best_meandepth * obs_df$area,
+                                na.rm=T) * 1e-9
+
+have_meandepth <- obs_df$lagoslakeid[which(!is.na(obs_df$best_meandepth))]
+have_maxdepth  <- obs_df$lagoslakeid[which(!is.na(obs_df$best_maxdepth))]
+
+missing_meandepth <- have_maxdepth[which(!(have_maxdepth %in% have_meandepth))]
+
+obs_df %>%
+  filter(lagoslakeid %in% have_meandepth) %>%
+  mutate(maxdepth_vol_km3 = (best_maxdepth * area / 3) * 1e-9,
+         meandepth_vol_km3 = (best_meandepth * area) * 1e-9,
+         vol_diff_m3 = abs(maxdepth_vol_km3 - meandepth_vol_km3)*1e9) %>%
+  # summarize(
+  #   sum_maxdepth_vol_km3  = sum(maxdepth_vol_km3),
+  #   sum_meandepth_vol_km3 = sum(meandepth_vol_km3) 
+  # ) %>%
+  ggplot(aes(x=vol_diff_m3)) + geom_histogram() +
+  scale_x_log10(limits=c(1e2, 1e8))
+
 volume_slices_df <- data.frame(value=volume_slices) %>%
   mutate(r = row_number() - 0.5,
+         prop = str_c(signif(100 * volume_slices/tot_volume_km3, 2), "%"),
          label = str_c("[", r-0.5, ", ", r+0.5, "]"))
 
 volume_slices_df %>%
-  ggplot(aes(x=r, y=value, group=1)) +
-  geom_bar(stat='summary', fun=sum) +
+  ggplot(aes(x=r, group=1)) +
+  geom_bar(aes(y=value), stat="identity") +
+  geom_text(aes(y=value, label=prop), nudge_y=4.0, size=0.36 * 8) +
   labs(
     y=TeX("Volume (km$^3$)"),
     x="Depth (m)"
@@ -386,7 +428,31 @@ volume_slices_df %>%
   ylim(0, NA) +
   scale_x_continuous(breaks=pretty_breaks(n=10)) +
   paper_theme
-#ggsave("notebooks/paper/figures/volume_slices.png", height=1.5, width=3, dpi=300)
+#ggsave("notebooks/paper/figures/volume_slices.png", height=2, width=4, dpi=300)
+
+# Distribution of max depth volume
+obs_df %>%
+  mutate(cone_volume = best_maxdepth * area / 3,
+         box_volume  = best_meandepth * area,
+         areaclass = floor(log10(area)),
+         areaclass_label = paste0("10^",areaclass,"-10^",areaclass+1," m^2")) %>%
+  filter(!is.na(cone_volume) & !is.na(box_volume)) %>%
+  select(cone_volume, box_volume, areaclass, areaclass_label) %>%
+  pivot_longer(contains("volume")) %>%
+  ggplot(aes(x=value)) + geom_density_ridges(aes(y=areaclass_label)) + 
+  paper_theme + scale_y_discrete(labels=unname(TeX(c(
+    "10$^4$-10$^5$ m$^2$",
+    "10$^5$-10$^6$ m$^2$",
+    "10$^6$-10$^7$ m$^2$",
+    "10$^7$-10$^8$ m$^2$",
+    "10$^8$-10$^9$ m$^2$",
+    "$>$10$^9$ m$^2$"
+  )))) + scale_x_log10(
+    breaks = trans_breaks("log10", function(x) 10^x),
+    labels = trans_format("log10", math_format(10^.x))
+  ) +
+  labs(y="Area class", x=TeX("Lake volume (m$^3$)"))
+#ggsave("notebooks/paper/figures/vol_density.png", width=3, height=2, dpi=300)
 
 # Distribution of lake form factor
 obs_df %>%
