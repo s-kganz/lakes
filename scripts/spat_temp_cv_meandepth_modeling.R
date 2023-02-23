@@ -16,10 +16,14 @@ FIT_RFS       <- TRUE
 SAVE_VAR_IMP  <- TRUE
 # any modification to the above should trigger new predictions
 DO_PREDICTION <- DO_BORUTA | FIT_LMS | FIT_RFS
+OUTPUT_DIR    <- "data_out/model_results/meandepth"
+MODEL_DF      <- "meandepth_modeling_df.csv"
+PREDICTION_DF <- "meandepth_prediction_df.csv"
+TARGET_VAR    <- "meandepth"
 # Read in the modeling dataframe. To save on memory, we won't load the prediction
 # dataframe until modeling is done.
 
-model_df <- read_csv("data_out/model_results/meandepth/meandepth_modeling_df.csv") %>%
+model_df <- read_csv(file.path(OUTPUT_DIR, MODEL_DF)) %>%
   drop_na()
 
 # feature selection via the boruta algorithm
@@ -29,11 +33,12 @@ if (DO_BORUTA) {
     # These variables are excluded because they are duplicates of other
     # variables, used in other models, or are just not reasonable to include.
     meandepth ~ . - lagoslakeid - logarea - log_elev_change - oliver_model_group,
-    data=model_df
+    data=model_df,
+    doTrace=1
   )
-  save(boruta, file="data_out/model_results/meandepth/boruta_meandepth")
+  save(boruta, file=file.path(OUTPUT_DIR, "boruta_meandepth"))
 } else {
-  load("data_out/model_results/meandepth/boruta_meandepth")
+  load(file.path(OUTPUT_DIR, "boruta_meandepth"))
 }
 
 boruta_importance <- boruta$ImpHistory %>%
@@ -90,7 +95,7 @@ if (SAVE_VAR_IMP) {
     left_join(boruta_importance_df, by='varname')
   
   write_csv(var_imp_results, 
-            "data_out/model_results/meandepth/meandepth_var_importance.csv")
+            file.path(OUTPUT_DIR, "meandepth_var_importance.csv"))
 }
 
 # After 12.5 in Geocomputation with R, we use spatial CV to get a performance
@@ -98,9 +103,9 @@ if (SAVE_VAR_IMP) {
 
 # Define the prediction task
 task_meandepth <- TaskRegrST$new(
-  "meandepth",
+  TARGET_VAR,
   model_df,
-  "meandepth",
+  TARGET_VAR,
   crs="EPSG:4326",
   coordinate_names=c("lake_lat_decdeg", "lake_lon_decdeg")
 )
@@ -165,15 +170,15 @@ if (FIT_LMS) {
   # Generate results as mean of all models
   bmr$aggregate(measures=msr_meandepth) %>%
     select(-resample_result) %>%
-    write_csv("data_out/model_results/meandepth/meandepth_lm_performance_metrics.csv")
+    write_csv(file.path(OUTPUT_DIR, "meandepth_lm_performance_metrics.csv"))
 
   # Final train on all data and save the models
   lrn_messager$train(task_meandepth)
   
-  save(lrn_messager, file="data_out/model_results/meandepth/model_messager")
+  save(lrn_messager, file=file.path(OUTPUT_DIR, "model_messager"))
 } else {
   # All of these should be fitted already
-  load("data_out/model_results/meandepth/model_messager")
+  load(file.path(OUTPUT_DIR, "model_messager"))
 }
 
 
@@ -223,31 +228,30 @@ if (FIT_RFS) {
     as.data.frame() %>% t() %>%
     as.data.frame() %>%
     mutate(learner=rownames(.)) %>%
-    write_csv("data_out/model_results/meandepth/meandepth_rf_performance_metrics.csv")
+    write_csv(file.path(OUTPUT_DIR, "meandepth_rf_performance_metrics.csv"))
   
   # And do the final tune without the outer loop so we have a usable model
   at_rf$train(task_meandepth)
   at_khazaei$train(task_meandepth)
   
   # save out the results
-  save(at_rf, file="data_out/model_results/meandepth/model_rf")
-  save(at_khazaei, file="data_out/model_results/meandepth/model_khazaei")
+  save(at_rf, file=file.path(OUTPUT_DIR, "model_rf"))
+  save(at_khazaei, file=file.path(OUTPUT_DIR, "model_khazaei"))
 } else {
-  load("data_out/model_results/meandepth/model_rf")
-  load("data_out/model_results/meandepth/model_khazaei")
+  load(file.path(OUTPUT_DIR, "model_rf"))
+  load(file.path(OUTPUT_DIR, "model_khazaei"))
 }
 
 if (DO_PREDICTION) {
   # Generate new predictions
-  obs_df <- read_csv("data_out/model_results/meandepth/meandepth_prediction_df.csv") %>%
-    filter(area < 1e7) %>%
+  obs_df <- read_csv(file.path(OUTPUT_DIR, PREDICTION_DF)) %>%
     drop_na()
   obs_df$prediction_messager <- lrn_messager$predict_newdata(obs_df)$response
   obs_df$prediction_khazaei   <- at_khazaei$predict_newdata(obs_df)$response
   obs_df$prediction_rf        <- at_rf$predict_newdata(obs_df)$response
   obs_df$in_training <- obs_df$lagoslakeid %in% model_df$lagoslakeid
   
-  write_csv(obs_df, "data_out/model_results/meandepth/meandepth_prediction_results.csv")
+  write_csv(obs_df, file.path(OUTPUT_DIR, "meandepth_prediction_results.csv"))
 } else {
-  obs_df <- read_csv("data_out/model_results/meandepth/meandepth_prediction_results.csv")
+  obs_df <- read_csv(file.path(OUTPUT_DIR, "meandepth_prediction_results.csv"))
 }

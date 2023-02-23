@@ -12,16 +12,20 @@ library(mlr3extralearners)
 # Many of the routines in this file are very slow, but don't need to be repeated
 # that often. If a modification has been made to the input data, use these flags
 # to set whether certain routines run.
-DO_BORUTA     <- FALSE
+DO_BORUTA     <- TRUE
 FIT_LMS       <- TRUE
 FIT_RFS       <- TRUE
-SAVE_VAR_IMP  <- FALSE
+SAVE_VAR_IMP  <- TRUE
 # any modification to the above should trigger new predictions
 DO_PREDICTION <- DO_BORUTA | FIT_LMS | FIT_RFS
+OUTPUT_DIR    <- "data_out/model_results/maxdepth_alldata"
+MODEL_DF      <- "maxdepth_modeling_df.csv"
+PREDICTION_DF <- "maxdepth_prediction_df.csv"
+TARGET_VAR    <- "maxdepth"
 
 # Read in the modeling dataframe. To save on memory, we won't load the prediction
 # dataframe until modeling is done.
-model_df <- read_csv("data_out/model_results/maxdepth/maxdepth_modeling_df.csv") %>%
+model_df <- read_csv(file.path(OUTPUT_DIR, MODEL_DF)) %>%
   mutate(oliver_model_group = as.factor(oliver_model_group))
 
 # feature selection via the boruta algorithm
@@ -31,11 +35,12 @@ if (DO_BORUTA) {
     # These variables are excluded because they are duplicates of other
     # variables, used in other models, or are just not reasonable to include.
     maxdepth ~ . - lagoslakeid - logarea - log_elev_change - oliver_model_group,
-    data=model_df
+    data=model_df,
+    doTrace=1
   )
-  save(boruta, file="data_out/model_results/maxdepth/boruta_maxdepth")
+  save(boruta, file=file.path(OUTPUT_DIR, "boruta_maxdepth"))
 } else {
-  load("data_out/model_results/maxdepth/boruta_maxdepth")
+  load(file.path(OUTPUT_DIR, "boruta_maxdepth"))
 }
 
 boruta_importance <- boruta$ImpHistory %>%
@@ -91,8 +96,8 @@ if (SAVE_VAR_IMP) {
     ) %>%
     left_join(boruta_importance_df, by='varname')
   
-  write_csv(var_imp_results, 
-            "data_out/model_results/maxdepth/maxdepth_var_importance.csv")
+  write_csv(var_imp_results,
+            file.path(OUTPUT_DIR, "maxdepth_var_importance.csv"))
 }
 
 # After 12.5 in Geocomputation with R, we use spatial CV to get a performance
@@ -100,9 +105,9 @@ if (SAVE_VAR_IMP) {
 
 # Define the prediction task
 task_maxdepth <- TaskRegrST$new(
-  "maxdepth",
+  TARGET_VAR,
   model_df,
-  "maxdepth",
+  TARGET_VAR,
   crs="EPSG:4326",
   coordinate_names=c("lake_lat_decdeg", "lake_lon_decdeg")
 )
@@ -154,7 +159,7 @@ lrn_khazaei <- po("select", selector=selector_name(
 # https://github.com/mlr-org/mlr3extralearners/blob/main/R/learner_lme4_regr_lmer.R
 lrn_lmer <- lrn("regr.lmer")
 lrn_lmer$param_set$values$formula <- 
-  "maxdepth~(1+area+sdi+ws_lake_arearatio+slope_max|oliver_model_group)"
+        maxdepth~(1+area+sdi+ws_lake_arearatio+slope_max|oliver_model_group)
 
 lrn_oliver <- po("select", selector=selector_name(
     c("area", "sdi", "ws_lake_arearatio", "slope_max", 
@@ -176,14 +181,22 @@ lrn_oliver <- po("select", selector=selector_name(
 # We don't know what distribution of depths will be provided by new data, 
 # so we have to hardcode the scaling constants to match the training set.
 # I don't think it matters much if centering/scaling isn't *exact* across CV
-# folds.
-maxdepth_scaled <- scale(log(model_df$maxdepth))
-attr(maxdepth_scaled, "scaled:center")
-attr(maxdepth_scaled, "scaled:scale")
+# folds. Also note that since we cannot guarantee the maxdepth_* symbols will be
+# in the environment at prediction time, we have to literally type the number
+# into the function. The stopifnot() statement verifies that the right number
+# goes into the function
+maxdepth_scaled <- scale(log(model_df[[TARGET_VAR]]))
+maxdepth_center <- attr(maxdepth_scaled, "scaled:center")
+maxdepth_scale  <- attr(maxdepth_scaled, "scaled:scale")
+# Verify that the constants are correct
+stopifnot(
+  abs(maxdepth_center - 1.917741) < 1e-5,
+  abs(maxdepth_scale  - 0.8718983) < 1e-5
+)
 lrn_oliver$param_set$values$targetmutate.trafo <- 
-    function(x) (log(x) - 1.873154) * 0.8399446
+    function(x) (log(x) - 1.917741) * 0.8718983
 lrn_oliver$param_set$values$targetmutate.inverter <- 
-    function(x) list(response=exp(x$response * 0.8399446 + 1.873154))
+    function(x) list(response=exp(x$response * 0.8718983 + 1.917741))
 
 # Hollister
 lrn_hollister <- po("select", 
@@ -232,7 +245,7 @@ if (FIT_LMS) {
   # Generate results as mean of all models
   lm_performance <- bmr$aggregate(measures=msr_maxdepth) %>%
     select(-resample_result) %>%
-    write_csv("data_out/model_results/maxdepth/maxdepth_lm_performance_metrics.csv")
+    write_csv(file.path(OUTPUT_DIR, "maxdepth_lm_performance_metrics.csv"))
 
   # Final train on all data and save the models
   lrn_oliver$train(task_maxdepth)
@@ -240,16 +253,16 @@ if (FIT_LMS) {
   lrn_sobek$train(task_maxdepth)
   lrn_hollister$train(task_maxdepth)
   
-  save(lrn_oliver, file="data_out/model_results/maxdepth/model_oliver")
-  save(lrn_heathcote, file="data_out/model_results/maxdepth/model_heathcote")
-  save(lrn_sobek, file="data_out/model_results/maxdepth/model_sobek")
-  save(lrn_hollister, file="data_out/model_results/maxdepth/model_hollister")
+  save(lrn_oliver, file=file.path(OUTPUT_DIR, "model_oliver"))
+  save(lrn_heathcote, file=file.path(OUTPUT_DIR, "model_heathcote"))
+  save(lrn_sobek, file=file.path(OUTPUT_DIR, "model_sobek"))
+  save(lrn_hollister, file=file.path(OUTPUT_DIR, "model_hollister"))
 } else {
   # All of these should be fitted already
-  load("data_out/model_results/maxdepth/model_oliver")
-  load("data_out/model_results/maxdepth/model_heathcote")
-  load("data_out/model_results/maxdepth/model_sobek")
-  load("data_out/model_results/maxdepth/model_hollister")
+  load(file.path(OUTPUT_DIR, "model_oliver"))
+  load(file.path(OUTPUT_DIR, "model_heathcote"))
+  load(file.path(OUTPUT_DIR, "model_sobek"))
+  load(file.path(OUTPUT_DIR, "model_hollister"))
 }
 
 
@@ -299,24 +312,23 @@ if (FIT_RFS) {
     as.data.frame() %>% t() %>%
     as.data.frame() %>%
     mutate(learner=rownames(.)) %>%
-    write_csv("data_out/model_results/maxdepth/maxdepth_rf_performance_metrics.csv")
+    write_csv(file.path(OUTPUT_DIR, "maxdepth_rf_performance_metrics.csv"))
   
   # And do the final tune without the outer loop so we have a usable model
   at_rf$train(task_maxdepth)
   at_khazaei$train(task_maxdepth)
   
   # save out the results
-  save(at_rf, file="data_out/model_results/maxdepth/model_rf")
-  save(at_khazaei, file="data_out/model_results/maxdepth/model_khazaei")
+  save(at_rf, file=file.path(OUTPUT_DIR, "model_rf"))
+  save(at_khazaei, file=file.path(OUTPUT_DIR, "model_khazaei"))
 } else {
-  load("data_out/model_results/maxdepth/model_rf")
-  load("data_out/model_results/maxdepth/model_khazaei")
+  load(file.path(OUTPUT_DIR, "model_rf"))
+  load(file.path(OUTPUT_DIR, "model_khazaei"))
 }
 
 if (DO_PREDICTION) {
   # Generate new predictions
-  obs_df <- read_csv("data_out/model_results/maxdepth/maxdepth_prediction_df.csv") %>%
-    filter(area < 1e7) %>%
+  obs_df <- read_csv(file.path(OUTPUT_DIR, PREDICTION_DF)) %>%
     mutate(oliver_model_group = as.factor(oliver_model_group)) %>%
     drop_na()
   obs_df$prediction_heathcote <- lrn_heathcote$predict_newdata(obs_df)$response
@@ -325,9 +337,9 @@ if (DO_PREDICTION) {
   obs_df$prediction_oliver    <- lrn_oliver$predict_newdata(obs_df)$response
   obs_df$prediction_sobek     <- lrn_sobek$predict_newdata(obs_df)$response
   obs_df$prediction_rf        <- at_rf$predict_newdata(obs_df)$response
-  obs_df$in_training <- obs_df$lagoslakeid %in% model_df$lagoslakeid
+  obs_df$in_training          <- obs_df$lagoslakeid %in% model_df$lagoslakeid
   
-  write_csv(obs_df, "data_out/model_results/maxdepth/maxdepth_prediction_results.csv")
+  write_csv(obs_df, file.path(OUTPUT_DIR, "maxdepth_prediction_results.csv"))
 } else {
-  obs_df <- read_csv("data_out/model_results/maxdepth/maxdepth_prediction_results.csv")
+  obs_df <- read_csv(file.path(OUTPUT_DIR, "maxdepth_prediction_results.csv"))
 }
