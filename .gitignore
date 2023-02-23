@@ -5,6 +5,8 @@ notebooks/poster/
 presentations/
 */.ipynb_checkpoints/
 .Rhistory
+.RData
+.RDataTmp
 *.docx
 parameter_list
 presentation
