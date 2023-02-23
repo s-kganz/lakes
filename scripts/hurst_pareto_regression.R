@@ -1,6 +1,7 @@
 library(tidyverse)
 library(doParallel)
 library(foreach)
+library(latex2exp)
 
 # This file derives coefficients for Hurst and Pareto regressions. Hurst is
 # bootstrapped for consistency with Cael and Seekell (2017), but the Pareto
@@ -9,10 +10,13 @@ library(foreach)
 set.seed(12012022) # for consistent resamples
 n_trials <- 1e3
 
-df <- read_csv("data_out/model_results/compiled_predictions.csv") %>%
+df <- read_csv("data_out/model_results/lt1000ha_compiled_predictions.csv") %>%
   rename(maxdepth=lake_maxdepth_m,
          meandepth=lake_meandepth_m) %>%
-  mutate(cone_volume = best_maxdepth * area / 3) %>%
+  mutate(cone_volume = best_maxdepth * area / 3,
+         box_volume  = best_meandepth * area,
+         rf_cone_volume = maxdepth_m_prediction_rf * area / 3,
+         rf_box_volume  = meandepth_m_prediction_rf * area) %>%
   mutate(logarea  = log10(area),
          log_model_zmax  = log10(best_maxdepth),
          log_model_zmean = log10(best_meandepth),
@@ -22,29 +26,48 @@ df <- read_csv("data_out/model_results/compiled_predictions.csv") %>%
   mutate(zmax_group = ifelse(is.na(maxdepth), "modeled", "observed"),
          zmean_group = ifelse(is.na(maxdepth), "modeled", "observed"))
 
-# We are interested in the Hurst exponent in three cases:
-# observed zmax, pooled observed/modeled zmax, and modeled zmax with a similar
-# area distribution to the observations.
-# make dfs containing no NAs for the first two cases
-df_zmax_obs <- df %>% filter(!is.na(maxdepth))
-df_zmax_all <- df %>% filter(!is.na(best_maxdepth))
-df_zmax_mod <- df %>% filter(is.na(maxdepth) & !is.na(best_maxdepth))
+# We are interested in the Hurst exponent in four cases:
+# observed zmax, pooled observed/modeled zmax, and modeled zmax & zmean with a 
+# similar area distribution to the observations.
+# Make dfs containing no NAs for the first two cases
+df_zmax_obs  <- df %>% filter(!is.na(maxdepth))
+df_zmean_obs <- df %>% filter(!is.na(meandepth))
+df_zmax_all  <- df %>% filter(!is.na(best_maxdepth))
+df_zmax_mod  <- df %>% filter(is.na(maxdepth) & !is.na(best_maxdepth))
+df_zmean_mod <- df %>% filter(is.na(meandepth) & !is.na(best_meandepth))
 
 # need to derive sampling weights to do the modeled-only regression right
-area_sample_weights <- (df_zmax_obs %>%
-                          filter(area < 1e7) %>%
-                          mutate(areaclass = floor(log10(area))) %>%
-                          pull(areaclass) %>% table() / nrow(df_zmax_obs)) %>%
+zmax_area_sample_weights <- (
+  df_zmax_obs %>%
+    filter(area < 1e7) %>%
+    mutate(areaclass = floor(log10(area))) %>%
+    pull(areaclass) %>% table() / nrow(df_zmax_obs)
+) %>%
+  as.data.frame() %>%
+  rename(sample_weight = 2,
+         areaclass = 1) %>%
+  # areaclass needs to not be a factor type
+  mutate(areaclass = parse_number(as.character(areaclass)))
+
+zmean_area_sample_weights <- (
+  df_zmean_obs %>%
+    filter(area < 1e7) %>%
+    mutate(areaclass=floor(log10(area))) %>%
+    pull(areaclass) %>% table() / nrow(df_zmean_obs)
+) %>%
   as.data.frame() %>%
   rename(sample_weight=2,
          areaclass=1) %>%
-  # areaclass needs to not be a factor type
   mutate(areaclass = parse_number(as.character(areaclass)))
 
 # attach the sampling weights to modeled depths
 df_zmax_mod <- df_zmax_mod %>%
   mutate(areaclass = floor(log10(area))) %>%
-  inner_join(area_sample_weights, by="areaclass")
+  inner_join(zmax_area_sample_weights, by="areaclass")
+
+df_zmean_mod <- df_zmean_mod %>%
+  mutate(areaclass = floor(log10(area))) %>%
+  inner_join(zmean_area_sample_weights, by="areaclass")
 
 # register the parallel backend
 cl <- makePSOCKcluster(4)
@@ -55,25 +78,34 @@ df_all_slopes <- foreach(i=1:n_trials, .combine=rbind,
   # make the bootstraps
   df_zmax_obs_sample <- slice_sample(df_zmax_obs, prop=1, replace=T)
   df_zmax_all_sample <- slice_sample(df_zmax_all, prop=1, replace=T)
-  # this bootstrap will have an areal distribution representative of the observed depths
-  df_zmax_mod_sample <- slice_sample(df_zmax_mod, prop=1, replace=T, weight_by=sample_weight)
+  # these bootstraps will have an areal distribution representative of the 
+  # observed depths
+  df_zmax_mod_sample <- slice_sample(df_zmax_mod, prop=1, replace=T, 
+                                     weight_by=sample_weight)
+  df_zmean_mod_sample <- slice_sample(df_zmean_mod, prop=1, replace=T,
+                                      weight_by=sample_weight)
   
   # run the regressions
   lm_zmax_obs <- lm(log(maxdepth) ~ log(area), data=df_zmax_obs_sample)
   lm_zmax_all <- lm(log(best_maxdepth) ~ log(area), data=df_zmax_all_sample)
   lm_zmax_mod <- lm(log(best_maxdepth) ~ log(area), data=df_zmax_mod_sample)
+  lm_zmean_mod <- lm(log(best_maxdepth) ~ log(area), data=df_zmean_mod_sample)
   
   # Do all the other models too as comparison
-  lm_zmax_hollister <- lm(log(maxdepth_prediction_hollister) ~ log(area),
+  lm_zmax_hollister <- lm(log(maxdepth_m_prediction_hollister) ~ log(area),
                           data=df_zmax_mod_sample)
-  lm_zmax_sobek     <- lm(log(maxdepth_prediction_sobek) ~ log(area),
+  lm_zmax_sobek     <- lm(log(maxdepth_m_prediction_sobek) ~ log(area),
                           data=df_zmax_mod_sample)
-  lm_zmax_oliver    <- lm(log(maxdepth_prediction_oliver) ~ log(area),
+  lm_zmax_oliver    <- lm(log(maxdepth_m_prediction_oliver) ~ log(area),
                           data=df_zmax_mod_sample)
-  lm_zmax_khazaei   <- lm(log(maxdepth_prediction_khazaei) ~ log(area),
+  lm_zmax_khazaei   <- lm(log(maxdepth_m_prediction_khazaei) ~ log(area),
                           data=df_zmax_mod_sample)
-  lm_zmax_heathcote <- lm(log(maxdepth_prediction_heathcote) ~ log(area),
+  lm_zmax_heathcote <- lm(log(maxdepth_m_prediction_heathcote) ~ log(area),
                           data=df_zmax_mod_sample)
+  lm_zmean_khazaei  <- lm(log(meandepth_m_prediction_khazaei) ~ log(area),
+                          data=df_zmean_mod_sample)
+  lm_zmean_messager <- lm(log(meandepth_m_prediction_messager) ~ log(area),
+                          data=df_zmean_mod_sample)
   
   # Collect the coefficients as output.
   # We don't really care about the intercept, but 2x the slope gives us the
@@ -89,7 +121,10 @@ df_all_slopes <- foreach(i=1:n_trials, .combine=rbind,
    zmax_heathcote_slope = lm_zmax_heathcote$coefficients[2],
    zmax_sobek_slope = lm_zmax_sobek$coefficients[2],
    zmax_oliver_slope = lm_zmax_oliver$coefficients[2],
-   zmax_khazaei_slope = lm_zmax_khazaei$coefficients[2]
+   zmax_khazaei_slope = lm_zmax_khazaei$coefficients[2],
+   zmean_mod_slope = lm_zmean_mod$coefficients[2],
+   zmean_khazaei_slope = lm_zmean_khazaei$coefficients[2],
+   zmean_messager_slope = lm_zmean_messager$coefficients[2]
   )
 } %>% as.data.frame() 
 
@@ -109,7 +144,7 @@ df_all_slopes %>%
   summarize(median = median(value),
             low_95ci  = quantile(value, probs=0.05),
             high_95ci = quantile(value, probs=0.95)) %>%
-  write_csv("data_out/model_results/hurst_coefficients.csv")
+  write_csv("data_out/model_results/lt1000ha_hurst_coefficients.csv")
 
 # Now do the Pareto regressions on area, volume, and depth.
 # This model uses observed depths if they are available, and uses the
@@ -176,4 +211,44 @@ pareto_df %>%
   mutate(minimum = 10^log_minimum) %>%
   left_join(pareto_fits, by="stat") %>%
   mutate(pred_count = 10^int * minimum^slope) %>%
-  write_csv("data_out/model_results/pareto_fits.csv")
+  write_csv("data_out/model_results/lt1000ha_pareto_fits.csv")
+
+# Bootstrapped regression of the box volume (from mean depth) and the cone
+# volume (from max depth)
+
+volume_df <- df %>%
+  filter(!is.na(rf_cone_volume) & !is.na(rf_box_volume)) %>%
+  select(rf_cone_volume, rf_box_volume)
+
+cl <- makePSOCKcluster(4)
+registerDoParallel(cl)
+
+volume_slopes <- foreach(i=1:n_trials, .combine=c, .packages=c("dplyr"), .verbose=T) %dopar% {
+  volume_slice <- slice_sample(volume_df, prop=1, replace=T)
+  volume_lm <- lm(rf_cone_volume ~ rf_box_volume, data=volume_slice)
+  volume_lm$coefficients[2]
+}
+
+stopCluster(cl)
+
+print(median(volume_slopes))
+
+volume_df %>%
+  slice_sample(prop=0.1) %>%
+  ggplot(aes(x=rf_cone_volume, y=rf_box_volume)) +
+  geom_point() +
+  geom_abline(slope=1, intercept=0, color="red", linetype="dashed") +
+  scale_x_log10() + scale_y_log10() +
+  labs(x=TeX("$V_{cone} = \\frac{1}{3} \\times Z_{max} \\times A$"),
+       y=TeX("$V_{box} = Z_{mean} \\times A$"))
+  
+sum(volume_df$rf_box_volume / 1e9)
+sum(volume_df$rf_cone_volume / 1e9)
+
+sum((df$maxdepth_m_prediction_hollister * df$area / 3) / 1e9, na.rm=T)
+sum((df$maxdepth_m_prediction_oliver * df$area / 3) / 1e9, na.rm=T)
+sum((df$maxdepth_m_prediction_sobek * df$area / 3) / 1e9, na.rm=T)
+sum((df$maxdepth_m_prediction_heathcote * df$area / 3) / 1e9, na.rm=T)
+sum((df$maxdepth_m_prediction_khazaei * df$area / 3) / 1e9, na.rm=T)
+sum(df$meandepth_m_prediction_khazaei * df$area / 1e9, na.rm=T)
+sum(df$meandepth_m_prediction_messager * df$area / 1e9, na.rm=T)
