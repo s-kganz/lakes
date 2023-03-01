@@ -10,13 +10,13 @@ library(paradox)
 # Many of the routines in this file are very slow, but don't need to be repeated
 # that often. If a modification has been made to the input data, use these flags
 # to set whether certain routines run.
-DO_BORUTA     <- TRUE
-FIT_LMS       <- TRUE
-FIT_RFS       <- TRUE
-SAVE_VAR_IMP  <- TRUE
+DO_BORUTA     <- FALSE
+FIT_LMS       <- FALSE
+FIT_RFS       <- FALSE
+SAVE_VAR_IMP  <- FALSE
 # any modification to the above should trigger new predictions
-DO_PREDICTION <- DO_BORUTA | FIT_LMS | FIT_RFS
-OUTPUT_DIR    <- "data_out/model_results/meandepth"
+DO_PREDICTION <- TRUE # DO_BORUTA | FIT_LMS | FIT_RFS
+OUTPUT_DIR    <- "data_out/model_results/meandepth_lt1000ha"
 MODEL_DF      <- "meandepth_modeling_df.csv"
 PREDICTION_DF <- "meandepth_prediction_df.csv"
 TARGET_VAR    <- "meandepth"

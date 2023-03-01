@@ -12,16 +12,15 @@ library(mlr3extralearners)
 # Many of the routines in this file are very slow, but don't need to be repeated
 # that often. If a modification has been made to the input data, use these flags
 # to set whether certain routines run.
-DO_BORUTA     <- TRUE
-FIT_LMS       <- TRUE
-FIT_RFS       <- TRUE
-SAVE_VAR_IMP  <- TRUE
+DO_BORUTA     <- FALSE
+FIT_LMS       <- FALSE
+FIT_RFS       <- FALSE
+SAVE_VAR_IMP  <- FALSE
 # any modification to the above should trigger new predictions
-DO_PREDICTION <- DO_BORUTA | FIT_LMS | FIT_RFS
-OUTPUT_DIR    <- "data_out/model_results/maxdepth_alldata"
+DO_PREDICTION <- TRUE # DO_BORUTA | FIT_LMS | FIT_RFS
+OUTPUT_DIR    <- "data_out/model_results/maxdepth_lt1000ha"
 MODEL_DF      <- "maxdepth_modeling_df.csv"
 PREDICTION_DF <- "maxdepth_prediction_df.csv"
-TARGET_VAR    <- "maxdepth"
 
 # Read in the modeling dataframe. To save on memory, we won't load the prediction
 # dataframe until modeling is done.
@@ -105,9 +104,9 @@ if (SAVE_VAR_IMP) {
 
 # Define the prediction task
 task_maxdepth <- TaskRegrST$new(
-  TARGET_VAR,
+  "maxdepth",
   model_df,
-  TARGET_VAR,
+  "maxdepth",
   crs="EPSG:4326",
   coordinate_names=c("lake_lat_decdeg", "lake_lon_decdeg")
 )
@@ -178,25 +177,26 @@ lrn_oliver <- po("select", selector=selector_name(
   ppl("targettrafo", graph=.) %>%
   GraphLearner$new(id="oliver")
 
-# We don't know what distribution of depths will be provided by new data, 
-# so we have to hardcode the scaling constants to match the training set.
-# I don't think it matters much if centering/scaling isn't *exact* across CV
-# folds. Also note that since we cannot guarantee the maxdepth_* symbols will be
-# in the environment at prediction time, we have to literally type the number
-# into the function. The stopifnot() statement verifies that the right number
-# goes into the function
-maxdepth_scaled <- scale(log(model_df[[TARGET_VAR]]))
+# Scaling constants for the linear mixed effects model
+maxdepth_scaled <- scale(log(model_df$maxdepth))
 maxdepth_center <- attr(maxdepth_scaled, "scaled:center")
 maxdepth_scale  <- attr(maxdepth_scaled, "scaled:scale")
-# Verify that the constants are correct
-stopifnot(
-  abs(maxdepth_center - 1.917741) < 1e-5,
-  abs(maxdepth_scale  - 0.8718983) < 1e-5
-)
+
+# These functions don't appear to look in the global environment by default so
+# we have to explicitly look up the sclaing constants.
 lrn_oliver$param_set$values$targetmutate.trafo <- 
-    function(x) (log(x) - 1.917741) * 0.8718983
+    function(x) {
+      center <- get("maxdepth_center", envir=.GlobalEnv)
+      scale  <- get("maxdepth_scale", envir=.GlobalEnv)
+      
+      (log(x) - center) * scale
+    }
 lrn_oliver$param_set$values$targetmutate.inverter <- 
-    function(x) list(response=exp(x$response * 0.8718983 + 1.917741))
+    function(x) {
+      center <- get("maxdepth_center", envir=.GlobalEnv)
+      scale  <- get("maxdepth_scale", envir=.GlobalEnv)
+      list(response=exp(x$response * scale + center))
+    }
 
 # Hollister
 lrn_hollister <- po("select", 
