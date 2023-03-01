@@ -22,7 +22,7 @@ geo     <- read_csv(
     lake_huc04 = str_sub(lake_huc12_pad, 1, 4),
     lake_huc06 = str_sub(lake_huc12_pad, 1, 6),
     #net_id = factor(net_id)
-  )
+  ) %>% select(-lake_huc12_pad)
 
 # Mean depth uses polygon reflectance/temperature, max depth uses point
 # reflectance/temperature.
@@ -125,11 +125,12 @@ model_df_maxdepth_alldata <- predictors_depth %>%
 model_df_maxdepth_lt1000ha <- model_df_maxdepth_alldata %>%
   filter(area <= 1e7) %>%
   get_oliver_model_groups() %>%
-  write_csv("data_out/model_results/maxdepth_lt1000ha/maxdepth_modeling_df.csv") %>%
+  write_csv("data_out/model_results/maxdepth_lt1000ha/maxdepth_modeling_df.csv")
 
 # Meandepth case
 model_df_meandepth_alldata <- predictors_depth %>%
   select(-maxdepth, -matches("^t_anomaly"), -matches("^B", ignore.case=FALSE)) %>%
+  filter(!is.na(meandepth)) %>%
   get_oliver_model_groups() %>%
   write_csv("data_out/model_results/meandepth_alldata/meandepth_modeling_df.csv")
 
@@ -139,12 +140,10 @@ model_df_meandepth_lt1000ha <- model_df_meandepth_alldata %>%
   write_csv("data_out/model_results/meandepth_lt1000ha/meandepth_modeling_df.csv")
 
 # Now generate the prediction DFs that the models will be applied to. Select
-# the same predictors, but exclude lake IDs that have depths and apply the
-# area constraint if needed. Note that we compute the Oliver model groups as in
-# the relevant modeling DF.
+# the same predictors and apply the area constraint if needed. Note that we 
+# compute the Oliver model groups as in the relevant modeling DF.
 pred_df_maxdepth_alldata <- predictors_depth %>%
   select(-maxdepth, -meandepth, -starts_with("polygon")) %>%
-  filter(!(lagoslakeid %in% model_df_maxdepth_alldata$lagoslakeid)) %>%
   mutate(oliver_model_group = ifelse(
       lake_huc04 %in% model_df_maxdepth_alldata$oliver_model_group, 
       lake_huc04, 
@@ -166,7 +165,6 @@ pred_df_maxdepth_lt1000ha <- pred_df_maxdepth_alldata %>%
 pred_df_meandepth_alldata <- predictors_depth %>%
   select(-maxdepth, -meandepth, 
          -matches("^t_anomaly"), -matches("^B", ignore.case=FALSE)) %>%
-  filter(!(lagoslakeid %in% model_df_meandepth_alldata$lagoslakeid)) %>%
   mutate(oliver_model_group = ifelse(
       lake_huc04 %in% model_df_meandepth_alldata$oliver_model_group, 
       lake_huc04, 
@@ -184,3 +182,17 @@ pred_df_meandepth_lt1000ha <- pred_df_meandepth_alldata %>%
     )
   ) %>%
   write_csv("data_out/model_results/meandepth_lt1000ha/meandepth_prediction_df.csv")
+
+# Merge the predictors from max/meandepth into one file to upload to EDI.
+unique_names <- setdiff(
+  names(pred_df_meandepth_alldata), 
+  names(pred_df_maxdepth_alldata)
+)
+
+all_predictors <- pred_df_maxdepth_alldata %>%
+  full_join(
+    pred_df_meandepth_alldata %>% 
+      select(all_of(c("lagoslakeid", unique_names))),
+    by="lagoslakeid"
+  ) %>%
+  write_csv("data_out/model_results/all_lake_predictors.csv")
