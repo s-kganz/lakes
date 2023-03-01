@@ -8,9 +8,9 @@ obs_df  <- read_csv("data_out/model_results/lt1000ha_compiled_predictions.csv")
 depths  <- read_csv("data_out/lagos_us_shape.csv") %>%
   left_join(read_csv("data_in/lagos/LAGOS_US_LOCUS/lake_depth.csv"),
             by=c("lagoslakei"="lagoslakeid"))
-load("data_out/model_results/maxdepth/boruta_maxdepth")
+load("data_out/model_results/maxdepth_lt1000ha/boruta_maxdepth")
 maxdepth_boruta <- boruta
-load("data_out/model_results/meandepth/boruta_meandepth")
+load("data_out/model_results/meandepth_lt1000ha/boruta_meandepth")
 meandepth_boruta <- boruta
 rm(boruta)
 
@@ -46,13 +46,13 @@ poster_theme <- theme(
 obs_df %>%
   # Filter down to both observed and modeled depths
   # Maxdepth version
-  # filter(!is.na(lake_maxdepth_m) & !is.na(maxdepth_m_prediction_rf)) %>%
-  # select(lake_maxdepth_m, contains("maxdepth_m_prediction")) %>%
-  # pivot_longer(contains("maxdepth_m_prediction")) %>%
+  filter(!is.na(lake_maxdepth_m) & !is.na(maxdepth_m_prediction_rf)) %>%
+  select(lake_maxdepth_m, contains("maxdepth_m_prediction")) %>%
+  pivot_longer(contains("maxdepth_m_prediction")) %>%
   # Meandepth version
-  filter(!is.na(lake_meandepth_m) & !is.na(meandepth_m_prediction_rf)) %>%
-  select(lake_meandepth_m, contains("meandepth_m_prediction")) %>%
-  pivot_longer(contains("meandepth_m_prediction")) %>%
+  # filter(!is.na(lake_meandepth_m) & !is.na(meandepth_m_prediction_rf)) %>%
+  # select(lake_meandepth_m, contains("meandepth_m_prediction")) %>%
+  # pivot_longer(contains("meandepth_m_prediction")) %>%
   mutate(name=recode(name,
                      maxdepth_m_prediction_heathcote="Heathcote et al. (2015)",
                      maxdepth_m_prediction_hollister="Hollister et al. (2011)",
@@ -63,31 +63,29 @@ obs_df %>%
                      meandepth_m_prediction_khazaei="Khazaei et al. (2022)",
                      meandepth_m_prediction_rf="This study",
                      meandepth_m_prediction_messager="Messager et al. (2016)")) %>%
-  ggplot(aes(x=lake_meandepth_m, y=value)) +
-  geom_abline(slope=1, intercept=0, linetype="dashed", color="red", size=0.75) +
+  ggplot(aes(x=lake_maxdepth_m, y=(value-lake_maxdepth_m)/lake_maxdepth_m*100)) +
+  geom_abline(slope=0, intercept=0, linetype="dashed", color="red", size=0.75) +
   geom_point(size=1, alpha=0.3) +
-  facet_wrap(~ name) + xlim(0, 100) + ylim(0, 100) +
+  facet_wrap(~ name) + xlim(0, 100) + ylim(-200, 200) +
   labs(x="Maximum depth (m)",
-       y="Model prediction (m)",
+       y="Model error (%)",
        pch="") + 
   paper_theme +
   theme(strip.text.x = element_text(size=8),
         axis.title = element_text(size=10))
   
-# ggsave("notebooks/paper/figures/maxdepth_one_to_one.png",
-#        width=4.5, height=3, dpi=300)
+# ggsave("notebooks/paper/figures/maxdepth_one_to_one_error.png",
+#        width=4.5, height=3.0, dpi=300)
 
-# density of depth by area class
+# density of depth by area class for only modeled lakes < 1000 ha
 density_df <- obs_df %>%
-  filter(!is.na(maxdepth_m_prediction_rf)) %>%
-  mutate(sizeclass = factor(floor(log10(area))),
-         sizeclass = recode_factor(sizeclass,
+  filter(!is.na(best_maxdepth)) %>%
+  mutate(sizeclass = floor(log10(area))) %>%
+  filter(sizeclass < 7) %>%
+  mutate(sizeclass = recode_factor(factor(sizeclass),
                                    `4`="10^4 m",
                                    `5`="10^5 m",
-                                   `6`="10^6 m",
-                                   `7`="10^7 m",
-                                   `8`="10^8 m",
-                                   `9`="10^9 m"))
+                                   `6`="10^6 m"))
 
 # mode depths according to the density estimation
 density_df %>%
@@ -99,28 +97,24 @@ density_df %>%
 
 density_df %>%
   ggplot(aes(x=best_maxdepth)) + 
-  geom_density_ridges(aes(fill=sizeclass, y=factor(sizeclass)), size=0.5) +
+  geom_density(aes(color=sizeclass), size=1.0) +
   xlim(0, 30) +
   labs(x="Predicted maximum depth (m)",
-       y="",
-       fill="Lake area") +
-  scale_y_discrete(
+       y="Density",
+       color="Area class"
+  ) +
+  scale_color_discrete(
     labels = unname(
       TeX(
         c(
           "10$^4$ - 10$^5$ m$^2$",
           "10$^5$ - 10$^6$ m$^2$",
-          "10$^6$ - 10$^7$ m$^2$",
-          "10$^7$ - 10$^8$ m$^2$",
-          "10$^8$ - 10$^9$ m$^2$",
-          ">10$^9$ m$^2$"
+          "10$^6$ - 10$^7$ m$^2$"
         )
       )
     )
-  ) + scale_y_discrete(limits=rev) +
-  paper_theme +
-  theme(legend.position = "none")
-
+  ) +
+  paper_theme
 #ggsave("notebooks/paper/figures/depth_distribution.png", width=4, height=2, dpi=300)
 
 pareto_fits %>%
@@ -151,13 +145,13 @@ pareto_fits %>%
 
 obs_df %>%
   # Mean depth version
-  filter(!is.na(lake_meandepth_m), !is.na(meandepth_m_prediction_rf)) %>%
-  select(meandepth_m_prediction_rf, lake_meandepth_m, lagoslakeid) %>%
-  mutate(resid = meandepth_m_prediction_rf-lake_meandepth_m) %>%
+  # filter(!is.na(lake_meandepth_m), !is.na(meandepth_m_prediction_rf)) %>%
+  # select(meandepth_m_prediction_rf, lake_meandepth_m, lagoslakeid) %>%
+  # mutate(resid = meandepth_m_prediction_rf-lake_meandepth_m) %>%
   # Max depth version
-  # filter(!is.na(lake_maxdepth_m), !is.na(maxdepth_m_prediction_rf)) %>%
-  # select(maxdepth_m_prediction_rf, lake_maxdepth_m, lagoslakeid) %>%
-  # mutate(resid = maxdepth_m_prediction_rf-lake_maxdepth_m) %>%
+  filter(!is.na(lake_maxdepth_m), !is.na(maxdepth_m_prediction_rf)) %>%
+  select(maxdepth_m_prediction_rf, lake_maxdepth_m, lagoslakeid) %>%
+  mutate(resid = maxdepth_m_prediction_rf-lake_maxdepth_m) %>%
   inner_join(
     read_csv("data_working/lagosus/lagos_us_ecoregions.csv") %>%
       select(lagoslakei, NA_L1NAME) %>%
@@ -179,36 +173,15 @@ obs_df %>%
   # mean depth version
   # xlim(-10, 10) +
   # max depth version
-   xlim(-10, 10) +
+   xlim(-30, 30) +
   theme(strip.text.x = element_blank(),
         legend.text = element_text(size=8),
         axis.text = element_text(size=8),
         axis.title = element_text(size=10))
-# ggsave("notebooks/paper/figures/meandepth_residual_ecoregion.png", 
+# ggsave("notebooks/paper/figures/maxdepth_residual_ecoregion.png", 
 # width=6, height=2.25, dpi=300)
 
-# surface temperature animation
-# not for the paper but it's pretty cool
-
-# p <- traindf %>%
-#   sample_n(5000) %>%
-#   filter(maxdepth < 100) %>%
-#   select(maxdepth, contains("t_anomaly")) %>%
-#   pivot_longer(contains("t_anomaly")) %>%
-#   mutate(month = parse_number(name)) %>%
-#   select(-name) %>%
-#   ggplot(aes(x=maxdepth, y=value)) + geom_point() +
-#   transition_states(
-#     factor(month),
-#     state_length=1
-#   ) +
-#   labs(
-#     title="Temperature Anomaly in Month: {closest_state}",
-#     y="Air-water Temperature Difference (K)",
-#     x="Max Depth"
-#   )
-# 
-# anim_save("temp_anomaly.gif", p)
+var_schema <- read_csv("data_out/model_results/variable_schema.csv")
 
 # Big 'ole variable importance plot
 maxdepth_varimp <- maxdepth_boruta$ImpHistory %>%
@@ -224,7 +197,6 @@ maxdepth_varimp <- maxdepth_boruta$ImpHistory %>%
   head(20) %>%
   rename(variable=name) %>%
   mutate(
-    category = strsplit("tttlhrplplhtrtclhhkr", "")[[1]],
     model="Maximum depth model"
   )
 
@@ -241,23 +213,22 @@ meandepth_varimp <- meandepth_boruta$ImpHistory %>%
   head(20) %>%
   rename(variable=name) %>%
   mutate(
-    category = strsplit("tltlplltpttcohhhlkkl", "")[[1]],
     model="Mean depth model"
   )
 
 rbind(meandepth_varimp, maxdepth_varimp) %>%
+  left_join(
+    var_schema %>% select(variable_in_code, category),
+    by=c("variable"="variable_in_code")
+  ) %>%
   group_by(model) %>%
   arrange(desc(mean_inc_rmse)) %>%
   mutate(
-    category = recode(category,
-                      l="Local terrain metric",
-                      c="Curvature terrain metric",
-                      k="Kernel terrain metric",
-                      p="Polygon attribute",
-                      t="Surface temperature",
-                      r="Surface reflectance",
-                      h="HUC4 statistic",
-                      o="Other"),
+    category=recode(category,
+                    "HUC04 summary statistics"="HUC4 statistic",
+                    "Water surface temperature"="Surface temperature",
+                    "Water surface reflectance"="Surface reflectance"
+    ),
     variable=recode(variable, 
                     linear_term="Cone model linear term",
                     messager_volume="Geostat. volume estimate",
@@ -332,8 +303,7 @@ rbind(meandepth_varimp, maxdepth_varimp) %>%
   scale_color_discrete(
     limits=c(
       "Local terrain metric",
-      "Curvature terrain metric",
-      "Kernel terrain metric",
+      "Neighborhood terrain metric",
       "Polygon attribute",
       "Surface temperature",
       "Surface reflectance",
@@ -517,14 +487,14 @@ obs_df %>%
 obs_df %>%
   mutate(box_volume = area * best_meandepth) %>%
   filter(!is.na(box_volume) & !is.na(cone_volume)) %>%
-  summarize(vol_r2 = cor(box_volume, cone_volume)^2,
+  dplyr::summarize(vol_r2 = cor(box_volume, cone_volume)^2,
             med_rel_diff = 10^mean(log10(box_volume/cone_volume)) - 1)
 
 # Total volumes of each predictions
 obs_df %>%
   select(contains("prediction"), area) %>%
   drop_na() %>%
-  summarize(
+  dplyr::summarize(
     rf_zmax_vol = sum(maxdepth_m_prediction_rf * area / 3) / 1e9,
     hollister_vol = sum(maxdepth_m_prediction_hollister * area / 3) / 1e9,
     khazaei_zmax_vol = sum(maxdepth_m_prediction_khazaei * area / 3) / 1e9,
@@ -535,3 +505,4 @@ obs_df %>%
     khazaei_zmean_vol = sum(meandepth_m_prediction_khazaei * area) / 1e9,
     messager_zmean_vol = sum(meandepth_m_prediction_messager * area) / 1e9
   )
+
