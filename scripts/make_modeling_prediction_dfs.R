@@ -22,7 +22,7 @@ geo     <- read_csv(
     lake_huc04 = str_sub(lake_huc12_pad, 1, 4),
     lake_huc06 = str_sub(lake_huc12_pad, 1, 6),
     #net_id = factor(net_id)
-  ) %>% select(-lake_huc12_pad)
+  )
 
 # Mean depth uses polygon reflectance/temperature, max depth uses point
 # reflectance/temperature.
@@ -195,4 +195,4 @@ all_predictors <- pred_df_maxdepth_alldata %>%
       select(all_of(c("lagoslakeid", unique_names))),
     by="lagoslakeid"
   ) %>%
-  write_csv("data_out/model_results/all_lake_predictors.csv")
+  write_csv("data_out/model_results/all_maxdepth_meandepth_predictors.csv")
